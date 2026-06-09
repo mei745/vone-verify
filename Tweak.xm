@@ -59,7 +59,7 @@ static void ShowForceVerifyAlert() {
                     [window.rootViewController presentViewController:tip animated:YES completion:nil];
                 } else {
                     // --- 失败：提示错误，并立即再次弹出验证框 ---
-                    UIAlertController *tip = [UIAlertController alertControllerWithTitle:@"验证失败" message:@"激活码错误，请检查后再试" preferredStyle:UIAlertControllerStyleAlert];
+                    UIAlertController *tip = [UIAlertController alertControllerWithTitle:@"验证失败" message:@"错误，请检查后再试" preferredStyle:UIAlertControllerStyleAlert];
                     [tip addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
                         // 点击“确定”后，立刻重新弹出验证框
                         ShowForceVerifyAlert();
