@@ -1,0 +1,31 @@
+name: Build Tweak
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: # 允许手动点击按钮触发编译
+
+jobs:
+  build:
+    runs-on: ubuntu-latest # 使用 Ubuntu 虚拟机
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Setup Theos
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git dpkg-dev libssl-dev ldid
+        git clone --recursive https://github.com/theos/theos.git $HOME/theos
+        echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+        
+    - name: Build Package
+      run: |
+        make package FINALPACKAGE=1
+        
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: vone-verify-deb
+        path: packages/*.deb
