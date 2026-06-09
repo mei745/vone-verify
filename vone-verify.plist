@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 定义匹配的进程 -->
+    <key>Filter</key>
+    <dict>
+        <!-- 按进程名匹配 -->
+        <key>Bundles</key>
+        <array>
+            <!-- SpringBoard 是 iOS 的桌面，通常必须包含，否则可能无法生效 -->
+            <string>com.apple.springboard</string>
+            <!-- 替换为你要修改的应用的 Bundle ID，比如微信是 com.tencent.xin -->
+            <string>com.tencent.xin</string>
+        </array>
+    </dict>
+</dict>
+</plist>
