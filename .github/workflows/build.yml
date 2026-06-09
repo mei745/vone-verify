@@ -19,12 +19,10 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y git dpkg-dev libssl-dev
         
-        # 2. 从 xerub/ldid 仓库下载预编译版本
-        wget https://github.com/xerub/ldid/releases/download/v1.2.2/ldid-linux-x86_64.tar.gz
-        tar -xzf ldid-linux-x86_64.tar.gz -C /usr/local/bin ldid
+        # 2. 使用 Theos 官方脚本自动安装 ldid 和 Theos
+        bash <(curl -s https://raw.githubusercontent.com/theos/theos/master/bin/install-theos)
         
-        # 3. 安装 Theos
-        git clone --recursive https://github.com/theos/theos.git $HOME/theos
+        # 3. 设置环境变量
         echo "THEOS=$HOME/theos" >> $GITHUB_ENV
         echo "$HOME/theos/bin" >> $GITHUB_PATH
 
