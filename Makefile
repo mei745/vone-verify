@@ -8,7 +8,7 @@ include $(THEOS)/makefiles/common.mk
 # 指定架构为 arm64
 ARCHS = arm64
 
-TWEAK_NAME = vone-verify
+TWEAK_NAME = voneyz
 
 # 指定源文件
 vone-verify_FILES = Tweak.xm
