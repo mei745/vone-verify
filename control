@@ -1,4 +1,4 @@
-Package: com.yourname.vone-verify
+Package: VONEKEJI.vone-verify
 Name: vone-verify
 Depends: mobilesubstrate (>= 0.9.7000)
 Version: 1.0
