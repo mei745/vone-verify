@@ -90,7 +90,7 @@
             [alert addAction:confirmAction];
 
             // 设置弹窗不可取消（用户必须点验证或杀后台）
-            alert.modalPresentationStyle = UIModalPresentationStyleOverCurrentContext;
+        alert.modalPresentationStyle = UIModalPresentationOverCurrentContext;
 
             [[[UIApplication sharedApplication] keyWindow].rootViewController presentViewController:alert animated:YES completion:nil];
         });
