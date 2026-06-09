@@ -15,13 +15,13 @@ jobs:
 
     - name: Setup Theos
       run: |
-        # 1. 更新源并安装基础依赖 (git, dpkg-dev 等)
+        # 1. 更新源并安装基础依赖
         sudo apt-get update
         sudo apt-get install -y git dpkg-dev libssl-dev
         
-        # 2. 手动安装 ldid (关键步骤！)
-        wget https://github.com/ProcursusTeam/Procursus/releases/download/1.4.2/ldid-1.4.2-Linux-x86_64.tar.xz
-        sudo tar -xJf ldid-1.4.2-Linux-x86_64.tar.xz -C /usr/local/bin ldid
+        # 2. 从 xerub/ldid 仓库下载预编译版本
+        wget https://github.com/xerub/ldid/releases/download/v1.2.2/ldid-linux-x86_64.tar.gz
+        tar -xzf ldid-linux-x86_64.tar.gz -C /usr/local/bin ldid
         
         # 3. 安装 Theos
         git clone --recursive https://github.com/theos/theos.git $HOME/theos
