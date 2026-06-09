@@ -1,0 +1,9 @@
+Package: com.yourname.vone-verify
+Name: vone-verify
+Depends: mobilesubstrate (>= 0.9.7000)
+Version: 1.0
+Architecture: iphoneos-arm
+Description: A simple tweak for verification bypass
+ Maintainer: Your Name
+Author: Your Name
+Section: Tweaks
