@@ -12,12 +12,12 @@ static void ShowForceVerifyAlert() {
     UIWindow *window = [UIApplication sharedApplication].keyWindow;
     if (!window) return;
 
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"正版授权"
-                                                                   message:@"请输入激活码以解锁功能"
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"授权验证"
+                                                                   message:@"请输入激活码"
                                                             preferredStyle:UIAlertControllerStyleAlert];
 
     [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-        textField.placeholder = @"请输入您的激活码";
+        textField.placeholder = @"请输入您的12位激活码";
         textField.secureTextEntry = NO;
     }];
 
@@ -54,12 +54,12 @@ static void ShowForceVerifyAlert() {
                     [defaults setObject:inputCode forKey:PREFS_KEY];
                     [defaults synchronize];
 
-                    UIAlertController *tip = [UIAlertController alertControllerWithTitle:@"成功" message:@"激活成功！" preferredStyle:UIAlertControllerStyleAlert];
+                    UIAlertController *tip = [UIAlertController alertControllerWithTitle:@"成功" message:@"欢迎使用！" preferredStyle:UIAlertControllerStyleAlert];
                     [tip addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
                     [window.rootViewController presentViewController:tip animated:YES completion:nil];
                 } else {
                     // --- 失败：提示错误，并立即再次弹出验证框 ---
-                    UIAlertController *tip = [UIAlertController alertControllerWithTitle:@"失败" message:@"激活码无效，请重试" preferredStyle:UIAlertControllerStyleAlert];
+                    UIAlertController *tip = [UIAlertController alertControllerWithTitle:@"失败" message:@"激活码无效，请检查后重试" preferredStyle:UIAlertControllerStyleAlert];
                     [tip addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
                         // 点击“确定”后，立刻重新弹出验证框
                         ShowForceVerifyAlert();
