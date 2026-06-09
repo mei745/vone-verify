@@ -1,9 +1,9 @@
-Package: VONEKEJI.vone-verify
-Name: vone-verify
+Package: com.yourname.voneyz
+Name: VoneYZ Activation
 Depends: mobilesubstrate (>= 0.9.7000)
 Version: 1.0
 Architecture: iphoneos-arm
 Description: A simple tweak for verification bypass
- Maintainer: VONEKEJI
-Author: VONEKEJI
+ Maintainer: voneyz
+Author: voneyz
 Section: Tweaks
