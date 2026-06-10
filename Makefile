@@ -18,7 +18,7 @@ voneyz_FILES = Tweak.xm
 voneyz_FRAMEWORKS = UIKit Foundation CFNetwork Security
 
 # === 编译标志 (可选，防止警告) ===
-voneyz_CFLAGS = -fobjc-arc
+voneyz_CFLAGS = -fobjc-arc -Wno-error=arc-performSelector-leaks
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
