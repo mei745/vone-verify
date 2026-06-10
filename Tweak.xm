@@ -6,118 +6,104 @@
 #define PLIST_PATH @"/var/mobile/Library/Preferences/com.yourcompany.vone-verify.plist"
 // =============================================
 
-// 【关键修复】定义 Category 接口，解决 "Forward Declaration" 报错
+// 【关键修复】必须在 %hook 之前定义 Category 接口
+// 这告诉编译器：MicroMessengerAppDelegate 现在有了下面这些新方法
 @interface MicroMessengerAppDelegate (VoneVerify)
 - (void)vone_startActivationCheck;
 - (void)vone_showAlertWithTitle:(NSString *)title message:(NSString *)msg isBlocking:(BOOL)blocking;
+- (void)vone_verifyCodeWithServer:(NSString *)code;
 @end
 
 %hook MicroMessengerAppDelegate
 
-// 1. 实现自定义方法：显示弹窗
-%new
-- (void)vone_showAlertWithTitle:(NSString *)title message:(NSString *)msg isBlocking:(BOOL)blocking {
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIWindow *window = [UIApplication sharedApplication].keyWindow;
-        if (!window) return;
+// 1. 微信启动完成后的回调 (适配 iOS 13+ SceneDelegate 逻辑通常也兼容此 Hook)
+- (void)applicationDidBecomeActive:(UIApplication *)application {
+    %orig; // 先执行微信原本的逻辑
 
-        UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:msg preferredStyle:UIAlertControllerStyleAlert];
-
-        if (blocking) {
-            // 阻塞模式：必须输入激活码才能关闭
-            [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-                textField.placeholder = @"请输入激活码";
-                textField.secureTextEntry = YES;
-            }];
-
-            UIAlertAction *confirmAction = [UIAlertAction actionWithTitle:@"提交验证" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-                NSString *code = alert.textFields.firstObject.text;
-                if (code.length > 0) {
-                    // 用户点击提交后，再次发起网络请求
-                    [self vone_verifyCodeWithServer:code];
-                } else {
-                    // 如果没填就点提交，继续弹窗
-                    [self vone_showAlertWithTitle:@"提示" message:@"激活码不能为空" isBlocking:YES];
-                }
-            }];
-            [alert addAction:confirmAction];
-        } else {
-            // 非阻塞模式（如验证成功）
-            UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil];
-            [alert addAction:okAction];
-        }
-
-        [window.rootViewController presentViewController:alert animated:YES completion:nil];
+    // 使用 dispatch_once 确保只在第一次激活时检查，避免切后台回来重复弹窗
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        // 延迟 4 秒检查，避开微信启动时的 UI 渲染高峰
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self vone_startActivationCheck];
+        });
     });
 }
 
-// 2. 实现自定义方法：联网验证逻辑
+%new
+- (void)vone_startActivationCheck {
+    NSUserDefaults *defaults = [[NSUserDefaults alloc] initWithSuiteName:@"com.yourcompany.vone-verify"];
+    NSString *savedCode = [defaults stringForKey:@"activation_code"];
+
+    if (!savedCode || savedCode.length == 0) {
+        // 没有保存过激活码，直接弹窗提示输入
+        [self vone_showAlertWithTitle:@"需要激活" message:@"本插件需要激活码才能使用，请联系管理员获取。" isBlocking:YES];
+    } else {
+        // 有激活码，去服务器验证
+        [self vone_verifyCodeWithServer:savedCode];
+    }
+}
+
 %new
 - (void)vone_verifyCodeWithServer:(NSString *)code {
-    // 显示一个加载中的提示（可选，这里简化为不显示，直接请求）
-    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"%@&code=%@", VERIFY_URL, code]];
+    NSURL *url = [NSURL URLWithString:VERIFY_URL];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    request.HTTPMethod = @"POST"; // 根据你的服务器要求改为 GET 或 POST
+    request.HTTPMethod = @"POST";
+
+    // 构建 POST 参数 (根据你的后端需求调整)
+    NSString *postString = [NSString stringWithFormat:@"code=%@", code];
+    request.HTTPBody = [postString dataUsingEncoding:NSUTF8StringEncoding];
 
     NSURLSession *session = [NSURLSession sharedSession];
-    NSURLSessionDataTask *task = [session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    [[session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        if (error) {
+            // 网络错误处理
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self vone_showAlertWithTitle:@"网络错误" message:@"无法连接服务器，请检查网络。" isBlocking:NO];
+            });
+            return;
+        }
+
+        // 解析 JSON 返回结果
+        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        NSNumber *status = json[@"status"]; // 假设后端返回 status: 1 为成功
+
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (error) {
-                [self vone_showAlertWithTitle:@"网络错误" message:@"无法连接服务器，请检查网络" isBlocking:YES];
-                return;
-            }
-
-            // 解析服务器返回的 JSON
-            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-            NSString *status = json[@"status"]; // 假设服务器返回 {"status": "success"} 或 "fail"
-
-            if ([status isEqualToString:@"success"]) {
-                // 验证成功：保存激活码到本地 plist
-                NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:PLIST_PATH];
-                if (!prefs) prefs = [[NSMutableDictionary alloc] init];
-                prefs[@"activation_code"] = code;
-                [prefs writeToFile:PLIST_PATH atomically:YES];
-
-                [self vone_showAlertWithTitle:@"激活成功" message:@"插件已激活，感谢您的支持！" isBlocking:NO];
+            if ([status integerValue] == 1) {
+                // 验证成功，不做任何操作，或者显示一个 Toast 提示成功
+                NSLog(@"[VoneVerify] Activation Success");
             } else {
-                // 验证失败：继续弹窗让用户重试
+                // 验证失败（过期或无效）
                 [self vone_showAlertWithTitle:@"激活失败" message:@"激活码无效或已过期" isBlocking:YES];
             }
         });
-    }];
-    [task resume];
+    }] resume];
 }
 
-// 3. 实现自定义方法：启动检查入口
 %new
-- (void)vone_startActivationCheck {
-    // 读取本地已保存的激活码
-    NSMutableDictionary *prefs = [[NSMutableDictionary alloc] initWithContentsOfFile:PLIST_PATH];
-    NSString *savedCode = prefs[@"activation_code"];
+- (void)vone_showAlertWithTitle:(NSString *)title message:(NSString *)msg isBlocking:(BOOL)blocking {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
+                                                                 message:msg
+                                                          preferredStyle:UIAlertControllerStyleAlert];
 
-    if (savedCode && savedCode.length > 0) {
-        // 如果有缓存，静默验证一次（防止用户修改服务器数据或激活码过期）
-        [self vone_verifyCodeWithServer:savedCode];
-    } else {
-        // 如果没有缓存，延迟 4 秒弹出输入框
-        // 这里的 4 秒就是你要求的 3-6 秒区间
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(4.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            [self vone_showAlertWithTitle:@"需要激活" message:@"本插件需要激活码才能使用，请联系管理员获取。" isBlocking:YES];
-        });
+    UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+        if (blocking) {
+            // 如果是阻塞式弹窗（如未激活），点击确定后退出微信
+            exit(0);
+        }
+    }];
+    [alert addAction:okAction];
+
+    // 获取当前顶层控制器来展示弹窗
+    UIWindow *window = [UIApplication sharedApplication].keyWindow;
+    UIViewController *rootVC = window.rootViewController;
+
+    // 寻找当前最上层的 ViewController
+    while (rootVC.presentedViewController) {
+        rootVC = rootVC.presentedViewController;
     }
-}
 
-// 4. Hook 微信启动生命周期
-// applicationDidBecomeActive: 是微信启动完成并显示主界面的时刻
-- (void)applicationDidBecomeActive:(id)arg1 {
-    %orig; // 先执行微信原本的逻辑
-
-    // 为了防止每次切后台再回来都弹窗，我们可以加一个简单的静态变量判断是否已经检查过
-    static BOOL hasChecked = NO;
-    if (!hasChecked) {
-        hasChecked = YES;
-        [self vone_startActivationCheck];
-    }
+    [rootVC presentViewController:alert animated:YES completion:nil];
 }
 
 %end
