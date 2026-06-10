@@ -14,11 +14,11 @@ static void ShowForceVerifyAlert() {
     if (window.rootViewController.presentedViewController) return;
 
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"正版授权验证"
-                                                                   message:@"系统检测到环境变化或授权失效，请重新验证激活码以继续使用。"
+                                                                   message:@"请输入激活码以继续使用。"
                                                             preferredStyle:UIAlertControllerStyleAlert];
 
     [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-        textField.placeholder = @"请输入您的激活码";
+        textField.placeholder = @"请输入您的12位激活码";
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         textField.text = [defaults stringForKey:PREFS_KEY]; // 自动填入旧码
     }];
