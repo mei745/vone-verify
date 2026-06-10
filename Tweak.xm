@@ -23,21 +23,28 @@
     NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         if (error) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                [self vone_showAlertWithTitle:@"验证失败" message:@"网络错误，请检查连接。"];
+                [self vone_showAlertWithTitle:@"验证失败" message:@"网络请求超时或错误"];
             });
             return;
         }
 
-        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-        NSString *status = json[@"status"];
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if ([status isEqualToString:@"frozen"]) {
-                [self vone_showAlertWithTitle:@"激活失效" message:@"您的激活码已被冻结，请联系管理员。"];
-            } else if (![status isEqualToString:@"success"]) {
-                [self vone_showAlertWithTitle:@"验证失败" message:@"无效的激活码，请检查网络或联系作者。"];
+        NSError *jsonError = nil;
+        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
+        if (!jsonError && json) {
+            NSString *status = json[@"status"];
+            if ([status isEqualToString:@"success"]) {
+                [[NSUserDefaults standardUserDefaults] setObject:@(YES) forKey:@"VoneActivated"];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+            } else {
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    [self vone_showAlertWithTitle:@"激活失效" message:@"您的激活码已被冻结，请联系管理员。"];
+                });
             }
-        });
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                [self vone_showAlertWithTitle:@"验证失败" message:@"无效的激活码，请检查网络或联系作者。"];
+            });
+        }
     }];
     [task resume];
 }
@@ -58,16 +65,49 @@
 %end
 
 %ctor {
-    Class wechatClass = objc_getClass("WeChat");
-    if (wechatClass) {
-        id wechatInstance = [wechatClass performSelector:NSSelectorFromString(@"sharedInstance")];
-        if (wechatInstance) {
-            NSDictionary *settings = [NSDictionary dictionaryWithContentsOfFile:PLIST_PATH];
-            NSString *savedCode = settings[@"activation_code"];
-            if (savedCode.length > 0) {
-                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    BOOL isActivated = [defaults boolForKey:@"VoneActivated"];
+
+    if (!isActivated) {
+        Class wechatClass = objc_getClass("WeChat");
+        if (wechatClass) {
+            id wechatInstance = [wechatClass performSelector:NSSelectorFromString(@"sharedInstance")];
+            if (wechatInstance) {
+                NSString *savedCode = [defaults stringForKey:@"VoneActivationCode"];
+                if (savedCode.length > 0) {
                     [(WeChat *)wechatInstance vone_verifyCodeWithServer:savedCode];
-                });
+                } else {
+                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                        UIAlertController *inputAlert = [UIAlertController alertControllerWithTitle:@"请输入激活码" message:nil preferredStyle:UIAlertControllerStyleAlert];
+                        [inputAlert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
+                            textField.placeholder = @"输入激活码";
+                        }];
+
+                        UIAlertAction *confirmAction = [UIAlertAction actionWithTitle:@"验证" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+                            UITextField *textField = inputAlert.textFields.firstObject;
+                            if (textField.text.length > 0) {
+                                [defaults setObject:textField.text forKey:@"VoneActivationCode"];
+                                [defaults synchronize];
+
+                                Class wcClass = objc_getClass("WeChat");
+                                id wcInst = [wcClass performSelector:NSSelectorFromString(@"sharedInstance")];
+                                if (wcInst) {
+                                    [(WeChat *)wcInst vone_verifyCodeWithServer:textField.text];
+                                }
+                            }
+                        }];
+
+                        UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:nil];
+                        [inputAlert addAction:confirmAction];
+                        [inputAlert addAction:cancelAction];
+
+                        UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
+                        while (rootVC.presentedViewController) {
+                            rootVC = rootVC.presentedViewController;
+                        }
+                        [rootVC presentViewController:inputAlert animated:YES completion:nil];
+                    });
+                }
             }
         }
     }
