@@ -8,13 +8,13 @@
 // === 核心逻辑：强制弹窗函数 ===
 static void ShowForceVerifyAlert() {
     UIWindow *window = [UIApplication sharedApplication].keyWindow;
-    if (!window) return;
+    if (!window || !window.rootViewController) return;
 
     // 防止重复弹窗：如果当前已经有弹窗显示，就不要再次创建
     if (window.rootViewController.presentedViewController) return;
 
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"正版授权验证"
-                                                                   message:@"请输入激活码以继续使用。"
+                                                                   message:@"请输入验证激活码以继续使用。"
                                                             preferredStyle:UIAlertControllerStyleAlert];
 
     [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
@@ -50,11 +50,10 @@ static void ShowForceVerifyAlert() {
                         // 2. 关闭弹窗，不再做任何事（用户进入微信）
                         [window.rootViewController dismissViewControllerAnimated:YES completion:nil];
                     } else {
-                        // 3. 验证失败：保持弹窗不关闭，并提示错误（可选），或者重新弹出
-                        // 这里为了简单，我们只是让弹窗留着，用户可以重试
-                        UIAlertController *errAlert = [UIAlertController alertControllerWithTitle:@"验证失败" message:@"激活码无效或网络错误" preferredStyle:UIAlertControllerStyleAlert];
-                        [errAlert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleCancel handler:nil]];
-                        [window.rootViewController presentViewController:errAlert animated:YES completion:nil];
+                        // 3. 【关键修改】验证失败：关闭当前弹窗，并立即重新弹出输入框
+                        [window.rootViewController dismissViewControllerAnimated:NO completion:^{
+                            ShowForceVerifyAlert();
+                        }];
                     }
                 });
             }] resume];
@@ -71,7 +70,7 @@ static void ShowForceVerifyAlert() {
     [window.rootViewController presentViewController:alert animated:YES completion:nil];
 }
 
-// === 辅助函数：启动时的静默验证 (关键修改在这里) ===
+// === 辅助函数：启动时的静默验证 ===
 static void CheckActivationOnLaunch() {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSString *savedCode = [defaults stringForKey:PREFS_KEY];
@@ -115,9 +114,7 @@ static void CheckActivationOnLaunch() {
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     %orig; // 先执行微信原本的启动逻辑
 
-    // 延迟 1 秒执行检查。
-    // 为什么要延迟？因为刚启动时 window 可能还没准备好，太早弹窗会报错或看不见。
-    // 1秒钟对于用户来说几乎无感，但能保证界面加载完毕。
+    // 延迟 1 秒执行检查。确保微信的主窗口已经初始化完毕
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         CheckActivationOnLaunch();
     });
