@@ -6,83 +6,81 @@
 #define PLIST_PATH @"/var/mobile/Library/Preferences/com.yourcompany.vone-verify.plist"
 // =============================================
 
-// 【关键修复】这里必须用 @interface ... (Category)，绝对不能用 @class
-@interface MicroMessengerAppDelegate (VoneVerify)
-- (void)vone_startActivationCheck;
-- (void)vone_showAlertWithTitle:(NSString *)title message:(NSString *)msg isBlocking:(BOOL)blocking;
-- (void)vone_verifyCodeWithServer:(NSString *)code;
-@end
-
-%hook MicroMessengerAppDelegate
-
-- (void)applicationDidBecomeActive:(id)arg1 {
-    %orig;
-    // 延迟 3 秒执行，避免启动时 UI 冲突
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self vone_startActivationCheck];
-    });
+// 辅助函数：获取 Plist 中的激活码
+static NSString *getSavedCode() {
+    NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:PLIST_PATH];
+    return prefs[@"activation_code"];
 }
 
-%new
-- (void)vone_startActivationCheck {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    NSString *savedCode = [defaults stringForKey:@"vone_activation_code"];
+// 辅助函数：显示弹窗 (使用 objc_msgSend 避开编译检查)
+static void showMyAlert(id self, NSString *title, NSString *msg, BOOL blocking) {
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:msg preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertAction *action = [UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil];
+    [alert addAction:action];
 
-    if (!savedCode || savedCode.length == 0) {
-        [self vone_showAlertWithTitle:@"需要激活" message:@"本插件需要激活码才能使用，请联系管理员获取。" isBlocking:YES];
-        return;
+    // 找到当前显示的 ViewController
+    UIViewController *rootVC = [UIApplication sharedApplication].keyWindow.rootViewController;
+    while (rootVC.presentedViewController) {
+        rootVC = rootVC.presentedViewController;
     }
-
-    // 有激活码，去服务器验证
-    [self vone_verifyCodeWithServer:savedCode];
+    [rootVC presentViewController:alert animated:YES completion:nil];
 }
 
-%new
-- (void)vone_verifyCodeWithServer:(NSString *)code {
-    NSURL *url = [NSURL URLWithString:VERIFY_URL];
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    request.HTTPMethod = @"POST";
-
-    // 构造 POST 数据
-    NSString *postString = [NSString stringWithFormat:@"code=%@", code];
-    NSData *postData = [postString dataUsingEncoding:NSUTF8StringEncoding];
-    request.HTTPBody = postData;
+// 辅助函数：联网验证
+static void verifyWithServer(id self, NSString *code) {
+    if (!code || code.length == 0) return;
 
     NSURLSession *session = [NSURLSession sharedSession];
+    // 构造请求
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:VERIFY_URL]];
+    request.HTTPMethod = @"POST";
+
+    // 构造 Body: code=xxxxx
+    NSString *bodyStr = [NSString stringWithFormat:@"code=%@", code];
+    request.HTTPBody = [bodyStr dataUsingEncoding:NSUTF8StringEncoding];
+
     [[session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         if (error) {
             dispatch_async(dispatch_get_main_queue(), ^{
-                [self vone_showAlertWithTitle:@"网络错误" message:@"无法连接服务器，请检查网络。" isBlocking:NO];
+                showMyAlert(self, @"网络错误", @"无法连接服务器，请检查网络。", NO);
             });
             return;
         }
 
-        // 解析 JSON
-        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-        NSString *status = json[@"status"]; // 假设服务器返回 {"status": "success"} 或 "fail"
-
-        dispatch_async(dispatch_get_main_queue(), ^{
-            if ([status isEqualToString:@"success"]) {
-                // 激活成功，什么都不做，或者存个标记
-                [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"vone_is_activated"];
-            } else {
-                [self vone_showAlertWithTitle:@"激活失败" message:@"激活码无效或已过期" isBlocking:YES];
-            }
-        });
+        // 简单的成功判断 (假设返回 "success" 字符串)
+        NSString *result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+        if ([result containsString:@"success"]) {
+             // 验证成功，这里可以保存状态到 Plist
+             NSMutableDictionary *prefs = [NSMutableDictionary dictionaryWithContentsOfFile:PLIST_PATH];
+             if (!prefs) prefs = [NSMutableDictionary dictionary];
+             prefs[@"is_activated"] = @YES;
+             [prefs writeToFile:PLIST_PATH atomically:YES];
+        } else {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                showMyAlert(self, @"激活失败", @"激活码无效或已过期", YES);
+            });
+        }
     }] resume];
 }
 
-%new
-- (void)vone_showAlertWithTitle:(NSString *)title message:(NSString *)msg isBlocking:(BOOL)blocking {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:msg preferredStyle:UIAlertControllerStyleAlert];
-    UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil];
-    [alert addAction:okAction];
+// 主逻辑：启动检查
+%hook MicroMessengerAppDelegate
 
-    // 强制在最顶层窗口显示
-    UIWindow *window = [UIApplication sharedApplication].keyWindow;
-    if (window) {
-        [window.rootViewController presentViewController:alert animated:YES completion:nil];
-    }
+- (void)applicationDidFinishLaunching:(id)arg1 {
+    %orig; // 先执行原始逻辑
+
+    // 延迟 5 秒执行，防止影响启动动画
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(5.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        NSString *savedCode = getSavedCode();
+
+        // 如果没有激活码，或者需要强制校验
+        if (!savedCode) {
+            showMyAlert(self, @"需要激活", @"本插件需要激活码才能使用，请联系管理员获取。", YES);
+        } else {
+            // 有激活码，后台静默验证
+            verifyWithServer(self, savedCode);
+        }
+    });
 }
 
 %end
