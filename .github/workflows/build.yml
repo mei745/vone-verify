@@ -15,34 +15,33 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y git curl rsync zip unzip
-        # 安装 Theos 编译所需的基础库
-        sudo apt-get install -y libltdl-dev libpng-dev
+        sudo apt-get install -y git curl rsync zip unzip libssl-dev libcurl4-openssl-dev
 
-    - name: Setup Theos
+    - name: Setup Theos & Download SDK
       run: |
         # 1. 克隆 Theos 仓库
+        echo "Cloning Theos..."
         git clone --recursive https://github.com/theos/theos.git $HOME/theos
-        
-        # 2. 下载 iOS SDK (核心修复)
-        # 进入 Theos 的 sdks 目录
-        mkdir -p $HOME/theos/sdks
-        # 下载 iOS 17.0 SDK (如果项目需要旧版本，请修改此处)
-        curl -L -o /tmp/iPhoneOS17.0.sdk.tar.xz https://github.com/theos/sdks/raw/master/iPhoneOS17.0.sdk.tar.xz
-        # 解压 SDK
-        tar -xJf /tmp/iPhoneOS17.0.sdk.tar.xz -C $HOME/theos/sdks
+
+        # 2. 设置 THEOS 环境变量
+        export THEOS=$HOME/theos
+        echo "THEOS=$THEOS" >> $GITHUB_ENV
+
+        # 3. 下载 iOS SDK (关键修复步骤)
+        # 使用 Xcode 官方提取的 SDK，来源稳定，支持 iOS 17+
+        echo "Downloading iPhoneOS17.5.sdk..."
+        mkdir -p $THEOS/sdks
+        curl -L -o /tmp/iPhoneOS17.5.sdk.tar.xz \
+          "https://github.com/arichornlover/sdks/raw/main/iPhoneOS17.5.sdk.tar.xz"
+
+        # 4. 解压 SDK
+        tar -xJf /tmp/iPhoneOS17.5.sdk.tar.xz -C $THEOS/sdks
+        ls -la $THEOS/sdks # 打印确认 SDK 是否已存在
 
     - name: Build Package
-      run: |
-        # 进入项目目录
-        cd $GITHUB_WORKSPACE
-        # 执行编译
-        make package FINALPACKAGE=1
+      run: make package FINALPACKAGE=1
       env:
-        # 3. 设置 THEOS 环境变量，确保所有步骤都能读取
-        THEOS: $HOME/theos
-        # 设置 THEOS_DEVICE_IP 仅用于本地测试，非必须
-        THEOS_DEVICE_IP: 127.0.0.1
+        THEOS: ${{ env.THEOS }}
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
