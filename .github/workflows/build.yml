@@ -1,4 +1,4 @@
-name: Build Tweak
+name: Build Tweak (iOS 16.2)
 
 on:
   push:
@@ -12,52 +12,43 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        submodules: recursive # 这一步非常重要，确保 Theos 的子模块被完整克隆
+        submodules: recursive # 必须开启递归克隆，否则 Theos 不完整
 
     - name: Install Dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y git curl rsync zip unzip libssl-dev libcurl4-openssl-dev
 
-    - name: Setup Theos
+    - name: Setup Theos & iOS 16.2 SDK
       run: |
-        # 1. 克隆 Theos 核心
+        # 1. 安装 Theos
         git clone --recursive https://github.com/theos/theos.git $HOME/theos
-        export THEOS=$HOME/theos
-        echo "THEOS=$THEOS" >> $GITHUB_ENV
-
-        # 2. 安装签名工具 (ldid)
-        curl -LO https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
-        chmod +x ldid_linux_x86_64
-        sudo mv ldid_linux_x86_64 $THEOS/bin/ldid
-
-    - name: Download iOS SDK (Stable Method)
-      run: |
-        # 使用 xybp888 的专用 Action 来下载 SDK，这是目前最稳的方法
-        # 它会直接从 GitHub Release 获取，避免网络拦截
-        mkdir -p $THEOS/sdks
-        cd $THEOS/sdks
-        # 这里我们使用一个非常稳定的源，如果失效，可以换成下面的备用源
-        curl -L -o iPhoneOS16.5.sdk.tar.xz "https://github.com/dora2-iOS/iOS-SDKs/raw/main/iPhoneOS16.5.sdk.tar.xz"
-
-        # 校验文件大小 (iOS 16.5 SDK 应该在 30MB 以上)
-        if [ $(stat -c%s "iPhoneOS16.5.sdk.tar.xz") -lt 1000000 ]; then
-          echo "Error: Download failed or file too small."
+        
+        # 2. 创建 SDK 存放目录
+        mkdir -p $HOME/theos/sdks
+        
+        # 3. 克隆你找到的 iOS 16.2 SDK (使用浅克隆加快速度)
+        # 注意：这里使用的是 blackXmask/iPhoneOS16.2.sdk
+        git clone --depth 1 https://github.com/blackXmask/iPhoneOS16.2.sdk.git $HOME/theos/sdks/iPhoneOS16.2.sdk
+        
+        # 4. 验证 SDK 是否存在关键文件
+        if [ ! -f "$HOME/theos/sdks/iPhoneOS16.2.sdk/System/Library/Frameworks/UIKit.framework/UIKit" ]; then
+          echo "错误：SDK 下载不完整或缺失关键文件！"
           exit 1
         fi
+        echo "SDK 准备就绪：iPhoneOS16.2.sdk"
 
-        tar -xf iPhoneOS16.5.sdk.tar.xz
-        rm iPhoneOS16.5.sdk.tar.xz
-        ls -la $THEOS/sdks
-
-    - name: Build Package
-      run: |
-        make package FINALPACKAGE=1
+    - name: Build Tweak
       env:
-        THEOS: ${{ env.THEOS }}
+        THEOS: $HOME/theos
+        # 指定使用 iOS 16.2 SDK
+        TARGET: iphone:clang:latest:16.2 
+      run: |
+        cd $GITHUB_WORKSPACE
+        make package FINALPACKAGE=1
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Compiled-Tweak
+        name: Tweak-Package
         path: packages/*.deb
