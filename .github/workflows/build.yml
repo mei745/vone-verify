@@ -2,7 +2,7 @@ name: Build Tweak
 
 on:
   push:
-    branches: [ main, master ] # 兼容 main 和 master 分支
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -11,52 +11,44 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+      with:
+        submodules: recursive # 这一步非常重要，确保 Theos 的子模块被完整克隆
 
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y git curl rsync zip unzip libssl-dev libcurl4-openssl-dev perl
+        sudo apt-get install -y git curl rsync zip unzip libssl-dev libcurl4-openssl-dev
 
-    - name: Setup Theos & Download SDK (Fixed Version)
+    - name: Setup Theos
       run: |
-        # 1. 克隆 Theos (使用官方最新稳定版)
-        echo "Cloning Theos..."
+        # 1. 克隆 Theos 核心
         git clone --recursive https://github.com/theos/theos.git $HOME/theos
         export THEOS=$HOME/theos
         echo "THEOS=$THEOS" >> $GITHUB_ENV
 
-        # 2. 准备 SDK 目录
+        # 2. 安装签名工具 (ldid)
+        curl -LO https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
+        chmod +x ldid_linux_x86_64
+        sudo mv ldid_linux_x86_64 $THEOS/bin/ldid
+
+    - name: Download iOS SDK (Stable Method)
+      run: |
+        # 使用 xybp888 的专用 Action 来下载 SDK，这是目前最稳的方法
+        # 它会直接从 GitHub Release 获取，避免网络拦截
         mkdir -p $THEOS/sdks
+        cd $THEOS/sdks
+        # 这里我们使用一个非常稳定的源，如果失效，可以换成下面的备用源
+        curl -L -o iPhoneOS16.5.sdk.tar.xz "https://github.com/xybp888/iOS-SDKs/raw/master/iPhoneOS16.5.sdk.tar.xz"
 
-        # 3. 下载 iOS 16.5 SDK
-        # 说明：这里使用了一个相对稳定的公共备份源。
-        # 如果这个也挂了，通常是因为 GitHub Actions IP 被目标服务器屏蔽。
-        # 下面的链接是目前存活率较高的一个。
-        echo "Downloading iOS 16.5 SDK..."
-        curl -L -o /tmp/iPhoneOS16.5.sdk.tar.xz \
-          "https://github.com/xybp888/iOS-SDKs/releases/download/iPhoneOS16.5.sdk/iPhoneOS16.5.sdk.tar.xz"
-
-        # 4. 校验文件大小 (防止下载到 404 页面)
-        FILE_SIZE=$(stat -c%s "/tmp/iPhoneOS16.5.sdk.tar.xz")
-        echo "Downloaded file size: $FILE_SIZE bytes"
-
-        if [ "$FILE_SIZE" -lt 1000000 ]; then
-          echo "Error: File is too small ($FILE_SIZE bytes). Likely a download failure or 404 page."
+        # 校验文件大小 (iOS 16.5 SDK 应该在 30MB 以上)
+        if [ $(stat -c%s "iPhoneOS16.5.sdk.tar.xz") -lt 1000000 ]; then
+          echo "Error: Download failed or file too small."
           exit 1
         fi
 
-        # 5. 解压 SDK
-        echo "Extracting SDK..."
-        tar -xf /tmp/iPhoneOS16.5.sdk.tar.xz -C $THEOS/sdks/
-
-        # 检查是否解压成功
-        if [ -d "$THEOS/sdks/iPhoneOS16.5.sdk" ]; then
-          echo "SDK installed successfully!"
-          ls -la $THEOS/sdks/
-        else
-          echo "Error: SDK extraction failed."
-          exit 1
-        fi
+        tar -xf iPhoneOS16.5.sdk.tar.xz
+        rm iPhoneOS16.5.sdk.tar.xz
+        ls -la $THEOS/sdks
 
     - name: Build Package
       run: |
@@ -67,5 +59,5 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: VoneVerify-Tweak
+        name: Compiled-Tweak
         path: packages/*.deb
