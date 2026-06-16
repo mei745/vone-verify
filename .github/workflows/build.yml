@@ -38,7 +38,7 @@ jobs:
         mkdir -p $THEOS/sdks
         cd $THEOS/sdks
         # 这里我们使用一个非常稳定的源，如果失效，可以换成下面的备用源
-        curl -L -o iPhoneOS16.5.sdk.tar.xz "https://github.com/xybp888/iOS-SDKs/raw/master/iPhoneOS16.5.sdk.tar.xz"
+        curl -L -o iPhoneOS16.5.sdk.tar.xz "https://github.com/dora2-iOS/iOS-SDKs/raw/main/iPhoneOS16.5.sdk.tar.xz"
 
         # 校验文件大小 (iOS 16.5 SDK 应该在 30MB 以上)
         if [ $(stat -c%s "iPhoneOS16.5.sdk.tar.xz") -lt 1000000 ]; then
