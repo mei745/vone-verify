@@ -1,6 +1,6 @@
 export ARCHS = arm64 arm64e
-# 将 14.0 改为 16.5，与下载的 SDK 保持一致
-export TARGET = iphone:clang:latest:16.5
+# 将 14.0 改为 16.2，与下载的 SDK 保持一致
+export TARGET = iphone:clang:latest:16.2
 
 include $(THEOS)/makefiles/common.mk
 
