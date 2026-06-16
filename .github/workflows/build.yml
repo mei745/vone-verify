@@ -15,19 +15,34 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y git curl rsync
+        sudo apt-get install -y git curl rsync zip unzip
+        # 安装 Theos 编译所需的基础库
+        sudo apt-get install -y libltdl-dev libpng-dev
 
     - name: Setup Theos
       run: |
+        # 1. 克隆 Theos 仓库
         git clone --recursive https://github.com/theos/theos.git $HOME/theos
-        export THEOS=$HOME/theos
-        echo "THEOS=$THEOS" >> $GITHUB_ENV
+        
+        # 2. 下载 iOS SDK (核心修复)
+        # 进入 Theos 的 sdks 目录
+        mkdir -p $HOME/theos/sdks
+        # 下载 iOS 17.0 SDK (如果项目需要旧版本，请修改此处)
+        curl -L -o /tmp/iPhoneOS17.0.sdk.tar.xz https://github.com/theos/sdks/raw/master/iPhoneOS17.0.sdk.tar.xz
+        # 解压 SDK
+        tar -xJf /tmp/iPhoneOS17.0.sdk.tar.xz -C $HOME/theos/sdks
 
     - name: Build Package
       run: |
+        # 进入项目目录
+        cd $GITHUB_WORKSPACE
+        # 执行编译
         make package FINALPACKAGE=1
       env:
-        THEOS: ${{ env.THEOS }}
+        # 3. 设置 THEOS 环境变量，确保所有步骤都能读取
+        THEOS: $HOME/theos
+        # 设置 THEOS_DEVICE_IP 仅用于本地测试，非必须
+        THEOS_DEVICE_IP: 127.0.0.1
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
