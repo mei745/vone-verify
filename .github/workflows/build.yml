@@ -2,7 +2,7 @@ name: Build Tweak
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ] # 兼容 main 和 master 分支
   workflow_dispatch:
 
 jobs:
@@ -15,33 +15,51 @@ jobs:
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y git curl rsync zip unzip libssl-dev libcurl4-openssl-dev
+        sudo apt-get install -y git curl rsync zip unzip libssl-dev libcurl4-openssl-dev perl
 
-    - name: Setup Theos & Download SDK
+    - name: Setup Theos & Download SDK (Fixed Version)
       run: |
-        # 1. 克隆 Theos
+        # 1. 克隆 Theos (使用官方最新稳定版)
+        echo "Cloning Theos..."
         git clone --recursive https://github.com/theos/theos.git $HOME/theos
         export THEOS=$HOME/theos
         echo "THEOS=$THEOS" >> $GITHUB_ENV
 
-        # 2. 下载 iOS 16.5 SDK (稳定版)
+        # 2. 准备 SDK 目录
         mkdir -p $THEOS/sdks
-        # 使用 xybp888 的稳定镜像
+
+        # 3. 下载 iOS 16.5 SDK
+        # 说明：这里使用了一个相对稳定的公共备份源。
+        # 如果这个也挂了，通常是因为 GitHub Actions IP 被目标服务器屏蔽。
+        # 下面的链接是目前存活率较高的一个。
+        echo "Downloading iOS 16.5 SDK..."
         curl -L -o /tmp/iPhoneOS16.5.sdk.tar.xz \
-          "https://github.com/xybp888/iOS-SDKs/raw/main/iPhoneOS16.5.sdk.tar.xz"
-        
-        # 检查文件大小，防止下载失败
-        if [ $(stat -c%s "/tmp/iPhoneOS16.5.sdk.tar.xz") -lt 100000000 ]; then
-          echo "Error: SDK file is too small, download failed."
+          "https://github.com/xybp888/iOS-SDKs/releases/download/iPhoneOS16.5.sdk/iPhoneOS16.5.sdk.tar.xz"
+
+        # 4. 校验文件大小 (防止下载到 404 页面)
+        FILE_SIZE=$(stat -c%s "/tmp/iPhoneOS16.5.sdk.tar.xz")
+        echo "Downloaded file size: $FILE_SIZE bytes"
+
+        if [ "$FILE_SIZE" -lt 1000000 ]; then
+          echo "Error: File is too small ($FILE_SIZE bytes). Likely a download failure or 404 page."
           exit 1
         fi
 
-        tar -xJf /tmp/iPhoneOS16.5.sdk.tar.xz -C $THEOS/sdks
-        rm /tmp/iPhoneOS16.5.sdk.tar.xz
+        # 5. 解压 SDK
+        echo "Extracting SDK..."
+        tar -xf /tmp/iPhoneOS16.5.sdk.tar.xz -C $THEOS/sdks/
+
+        # 检查是否解压成功
+        if [ -d "$THEOS/sdks/iPhoneOS16.5.sdk" ]; then
+          echo "SDK installed successfully!"
+          ls -la $THEOS/sdks/
+        else
+          echo "Error: SDK extraction failed."
+          exit 1
+        fi
 
     - name: Build Package
       run: |
-        make clean
         make package FINALPACKAGE=1
       env:
         THEOS: ${{ env.THEOS }}
