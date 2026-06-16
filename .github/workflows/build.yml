@@ -2,8 +2,8 @@ name: Build Tweak
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch: # 允许手动触发
+    branches: [ main ] # 或者 master，取决于你的分支名
+  workflow_dispatch:   # 允许手动触发
 
 jobs:
   build:
@@ -19,42 +19,40 @@ jobs:
 
     - name: Setup Theos & Download SDK
       run: |
-        # 1. 克隆 Theos 仓库
+        # 1. 克隆 Theos 主程序
         echo "Cloning Theos..."
         git clone --recursive https://github.com/theos/theos.git $HOME/theos
 
-        # 2. 设置 THEOS 环境变量
+        # 设置环境变量
         export THEOS=$HOME/theos
         echo "THEOS=$THEOS" >> $GITHUB_ENV
 
-        # 3. 下载 iOS SDK (关键修复步骤)
-        # 使用 xybp888 维护的稳定镜像源，避免 GitHub 链接失效问题
-        echo "Downloading iOS SDK..."
+        # 2. 创建 SDK 目录
         mkdir -p $THEOS/sdks
 
-        # 定义 SDK 文件名和下载链接
-        SDK_FILE="iPhoneOS16.5.sdk.tar.xz"
-        SDK_URL="https://github.com/xybp888/iOS-SDKs/raw/master/iPhoneOS16.5.sdk.tar.xz"
+        # 3. 下载 iOS SDK (使用稳定的 xybp888 镜像)
+        # 这里使用的是 iPhoneOS16.5.sdk，非常稳定且兼容性好
+        echo "Downloading iOS 16.5 SDK..."
+        curl -L -o /tmp/iPhoneOS16.5.sdk.tar.xz \
+          "https://github.com/xybp888/iOS-SDKs/raw/main/iPhoneOS16.5.sdk.tar.xz"
 
-        # 下载文件
-        curl -L "$SDK_URL" -o "$THEOS/sdks/$SDK_FILE"
-
-        # 【重要】校验文件大小，防止下载到 404 页面
-        FILE_SIZE=$(stat -c%s "$THEOS/sdks/$SDK_FILE")
-        if [ "$FILE_SIZE" -lt 10000000 ]; then
-            echo "::error::Download failed! File size is too small ($FILE_SIZE bytes). It's likely a 404 page."
-            exit 1
+        # 检查文件大小，确保下载成功（防止再次下载到 404 页面）
+        FILE_SIZE=$(stat -c%s "/tmp/iPhoneOS16.5.sdk.tar.xz")
+        if [ "$FILE_SIZE" -lt 100000000 ]; then
+          echo "Error: Downloaded file is too small ($FILE_SIZE bytes). Likely a 404 page."
+          exit 1
         fi
 
         # 解压 SDK
-        echo "Extracting SDK..."
-        tar -xf "$THEOS/sdks/$SDK_FILE" -C $THEOS/sdks
-        rm "$THEOS/sdks/$SDK_FILE" # 删除压缩包以节省空间
+        tar -xJf /tmp/iPhoneOS16.5.sdk.tar.xz -C $THEOS/sdks
+        rm /tmp/iPhoneOS16.5.sdk.tar.xz
 
-        echo "Theos setup complete."
+        echo "Theos and SDK setup complete."
 
     - name: Build Package
-      run: make package FINALPACKAGE=1
+      run: |
+        make clean
+        make package FINALPACKAGE=1
       env:
         THEOS: ${{ env.THEOS }}
 
