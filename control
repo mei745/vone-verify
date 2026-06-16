@@ -1,9 +1,8 @@
-Package: com.vone.verify
-Name: VoneVerify
-Depends: mobilesubstrate (>= 0.9.7000)
-Version: 1.0
+Package: com.yourname.voneverify
+Name: Vone Verify Tweak
+Version: 1.0-1
 Architecture: iphoneos-arm
-Description: WeChat Activation Tweak
-Maintainer: You
-Author: You
+Description: A simple verification tweak for Vone.
+Maintainer: Your Name <your@email.com>
 Section: Tweaks
+Depends: mobilesubstrate (>= 0.9.7000)
