@@ -3,31 +3,34 @@ name: Build Tweak
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:
+  workflow_dispatch: # 允许手动触发
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: sickcodes/docker-osx:latest # 或者使用专门的 theos docker 镜像
-      options: --privileged
 
     steps:
     - uses: actions/checkout@v2
 
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y git curl rsync
+
     - name: Setup Theos
       run: |
-        apt-get update && apt-get install -y git curl sudo
-        git clone --recursive https://github.com/theos/theos.git /opt/theos
-        export THEOS=/opt/theos
+        git clone --recursive https://github.com/theos/theos.git $HOME/theos
+        export THEOS=$HOME/theos
+        echo "THEOS=$THEOS" >> $GITHUB_ENV
 
     - name: Build Package
       run: |
-        export THEOS=/opt/theos
         make package FINALPACKAGE=1
+      env:
+        THEOS: ${{ env.THEOS }}
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v2
       with:
-        name: VoneVerify.deb
+        name: VoneVerify-Tweak
         path: packages/*.deb
