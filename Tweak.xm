@@ -1,148 +1,244 @@
 #import <UIKit/UIKit.h>
-#include <objc/runtime.h>
-#include <sys/utsname.h>
+#import <Foundation/Foundation.h>
 
-// ================= 配置区域 =================
-#define VERIFY_URL @"https://vonekeji.cn/admin.php?action=verify" // 【修改】你的后端验证接口地址
-#define PLIST_PATH @"/var/mobile/Library/Preferences/com.vone.verify.plist"
-// =============================================
+// --- 配置区 ---
+#define SERVER_URL @"https://vonekeji.cn/verify.php" // 【重要】请替换为你的实际API地址
 
-// 获取设备唯一标识符 (UUID)
-NSString *getDeviceUUID() {
-    NSString *uuid = [[NSUserDefaults standardUserDefaults] stringForKey:@"vone_device_uuid"];
-    if (!uuid) {
-        uuid = [[NSProcessInfo processInfo] globallyUniqueString];
-        [[NSUserDefaults standardUserDefaults] setObject:uuid forKey:@"vone_device_uuid"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
-    }
+// --- 全局变量 ---
+static BOOL isVerified = NO;
+static UIWindow *blockWindow = nil;
+
+// 获取设备唯一标识 (UUID)
+NSString* getDeviceUUID() {
+    NSString *uuid = [[UIDevice currentDevice] identifierForVendor].UUIDString;
     return uuid;
 }
 
-// 本地存储激活码
-void saveActivationCode(NSString *code) {
-    NSMutableDictionary *prefs = [NSMutableDictionary dictionaryWithContentsOfFile:PLIST_PATH];
-    if (!prefs) prefs = [NSMutableDictionary dictionary];
-    [prefs setObject:code forKey:@"activation_code"];
-    [prefs writeToFile:PLIST_PATH atomically:YES];
-}
+// 发送网络请求验证卡密
+BOOL verifyCode(NSString *code) {
+    NSString *deviceID = getDeviceUUID();
+    NSString *urlString = [NSString stringWithFormat:@"%@?code=%@&uuid=%@", SERVER_URL, code, deviceID];
+    NSURL *url = [NSURL URLWithString:[urlString stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]]];
 
-NSString *loadActivationCode() {
-    NSMutableDictionary *prefs = [NSMutableDictionary dictionaryWithContentsOfFile:PLIST_PATH];
-    return [prefs objectForKey:@"activation_code"];
-}
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    [request setTimeoutInterval:10.0]; // 超时时间10秒
 
-// 显示原生输入弹窗
-void showInputAlert(void (^completion)(NSString *code)) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"输入您购买的授权卡密" message:nil preferredStyle:UIAlertControllerStyleAlert];
+    NSHTTPURLResponse *response = nil;
+    NSError *error = nil;
+    NSData *data = [NSURLConnection sendSynchronousRequest:request returningResponse:&response error:&error];
 
-    [alert addTextFieldWithConfigurationHandler:^(UITextField *textField) {
-        textField.placeholder = @"请输入您的授权卡密";
-        textField.secureTextEntry = NO;
-    }];
-
-    UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:@"取消" style:UIAlertActionStyleCancel handler:^(UIAlertAction *action) {
-        // 点击取消后，延迟 0.5秒 再次弹出，实现“无法彻底关闭”
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-            showInputAlert(completion);
-        });
-    }];
-
-    UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
-        UITextField *textField = alert.textFields.firstObject;
-        NSString *inputCode = textField.text;
-        if (inputCode.length > 0 && completion) {
-            completion(inputCode);
-        } else {
-            // 如果输入为空点击确定，也视为取消，重新弹出
-            showInputAlert(completion);
-        }
-    }];
-
-    [alert addAction:cancelAction];
-    [alert addAction:okAction];
-
-    // 寻找当前顶层控制器来展示弹窗
-    UIWindow *window = [UIApplication sharedApplication].keyWindow;
-    UIViewController *rootVC = window.rootViewController;
-    while (rootVC.presentedViewController) {
-        rootVC = rootVC.presentedViewController;
+    if (!data || error) {
+        return NO; // 网络错误或超时
     }
-    [rootVC presentViewController:alert animated:YES completion:nil];
-}
 
-// 显示提示弹窗（欢迎或错误）
-void showMessageAlert(NSString *title, NSString *msg, BOOL blocking) {
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:msg preferredStyle:UIAlertControllerStyleAlert];
-    [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
-
-    UIWindow *window = [UIApplication sharedApplication].keyWindow;
-    UIViewController *rootVC = window.rootViewController;
-    while (rootVC.presentedViewController) {
-        rootVC = rootVC.presentedViewController;
+    NSString *result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+    // 假设后台返回 "ok" 代表验证成功，其他均为失败
+    if ([result isEqualToString:@"ok"]) {
+        return YES;
     }
-    [rootVC presentViewController:alert animated:YES completion:nil];
+    return NO;
 }
 
-// 核心验证逻辑
-void startVerificationProcess() {
-    NSString *savedCode = loadActivationCode();
-    NSString *deviceUUID = getDeviceUUID();
+// --- 自定义弹窗视图类 (复刻图片风格) ---
+@interface ActivationView : UIView <UITextFieldDelegate>
+@property (nonatomic, strong) UITextField *inputField;
+@property (nonatomic, strong) UIButton *verifyBtn;
+@property (nonatomic, strong) UILabel *statusLabel;
+@end
 
-    // 如果没有保存的激活码，直接弹窗
-    if (!savedCode || savedCode.length == 0) {
-        showInputAlert(nil); // 这里传入 nil，因为第一次只是让用户输，还没法校验
+@implementation ActivationView
+
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.backgroundColor = [UIColor colorWithWhite:0 alpha:0.5]; // 半透明背景遮罩
+
+        // 1. 白色圆角卡片容器
+        UIView *card = [[UIView alloc] init];
+        card.backgroundColor = [UIColor whiteColor];
+        card.layer.cornerRadius = 14.0;
+        card.translatesAutoresizingMaskIntoConstraints = NO;
+        [self addSubview:card];
+
+        // 2. 标题 "温馨提示"
+        UILabel *titleLabel = [[UILabel alloc] init];
+        titleLabel.text = @"温馨提示";
+        titleLabel.font = [UIFont boldSystemFontOfSize:17];
+        titleLabel.textColor = [UIColor blackColor];
+        titleLabel.textAlignment = NSTextAlignmentCenter;
+        titleLabel.translatesAutoresizingMaskIntoConstraints = NO;
+        [card addSubview:titleLabel];
+
+        // 3. 副标题 "请输入激活码"
+        UILabel *subLabel = [[UILabel alloc] init];
+        subLabel.text = @"请输入激活码";
+        subLabel.font = [UIFont systemFontOfSize:14];
+        subLabel.textColor = [UIColor darkGrayColor];
+        subLabel.textAlignment = NSTextAlignmentCenter;
+        subLabel.translatesAutoresizingMaskIntoConstraints = NO;
+        [card addSubview:subLabel];
+
+        // 4. 输入框 (带灰色边框)
+        _inputField = [[UITextField alloc] init];
+        _inputField.placeholder = @"请输入激活码";
+        _inputField.borderStyle = UITextBorderStyleRoundedRect; // 圆角风格
+        _inputField.font = [UIFont systemFontOfSize:15];
+        _inputField.clearButtonMode = UITextFieldViewModeWhileEditing;
+        _inputField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        _inputField.delegate = self;
+        _inputField.translatesAutoresizingMaskIntoConstraints = NO;
+        [card addSubview:_inputField];
+
+        // 5. 分割线 (模拟iOS Alert风格)
+        UIView *line = [[UIView alloc] init];
+        line.backgroundColor = [UIColor colorWithRed:0.9 green:0.9 blue:0.9 alpha:1.0];
+        line.translatesAutoresizingMaskIntoConstraints = NO;
+        [card addSubview:line];
+
+        // 6. 验证按钮 (底部蓝色文字)
+        _verifyBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+        [_verifyBtn setTitle:@"验证" forState:UIControlStateNormal];
+        _verifyBtn.titleLabel.font = [UIFont boldSystemFontOfSize:17];
+        [_verifyBtn addTarget:self action:@selector(handleVerify) forControlEvents:UIControlEventTouchUpInside];
+        _verifyBtn.translatesAutoresizingMaskIntoConstraints = NO;
+        [card addSubview:_verifyBtn];
+
+        // 7. 状态提示标签 (用于显示"卡密错误"等)
+        _statusLabel = [[UILabel alloc] init];
+        _statusLabel.font = [UIFont systemFontOfSize:12];
+        _statusLabel.textColor = [UIColor redColor];
+        _statusLabel.textAlignment = NSTextAlignmentCenter;
+        _statusLabel.alpha = 0; // 默认隐藏
+        _statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
+        [card addSubview:_statusLabel];
+
+        // --- 布局约束 (Auto Layout) ---
+        [NSLayoutConstraint activateConstraints:@[
+            // 卡片居中，宽度固定
+            [card centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
+            [card centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+            [card widthAnchor constraintEqualToConstant:270],
+
+            // 标题位置
+            [titleLabel.topAnchor constraintEqualToAnchor:card.topAnchor constant:20],
+            [titleLabel.leadingAnchor constraintEqualToAnchor:card.leadingAnchor],
+            [titleLabel.trailingAnchor constraintEqualToAnchor:card.trailingAnchor],
+
+            // 副标题
+            [subLabel.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:8],
+            [subLabel.leadingAnchor constraintEqualToAnchor:card.leadingAnchor],
+            [subLabel.trailingAnchor constraintEqualToAnchor:card.trailingAnchor],
+
+            // 输入框
+            [_inputField.topAnchor constraintEqualToAnchor:subLabel.bottomAnchor constant:15],
+            [_inputField.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:15],
+            [_inputField.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-15],
+            [_inputField.heightAnchor constraintEqualToConstant:36],
+
+            // 分割线
+            [line.topAnchor constraintEqualToAnchor:_inputField.bottomAnchor constant:15],
+            [line.leadingAnchor constraintEqualToAnchor:card.leadingAnchor],
+            [line.trailingAnchor constraintEqualToAnchor:card.trailingAnchor],
+            [line.heightAnchor constraintEqualToConstant:0.5],
+
+            // 按钮
+            [_verifyBtn.topAnchor constraintEqualToAnchor:line.bottomAnchor],
+            [_verifyBtn.leadingAnchor constraintEqualToAnchor:card.leadingAnchor],
+            [_verifyBtn.trailingAnchor constraintEqualToAnchor:card.trailingAnchor],
+            [_verifyBtn.heightAnchor constraintEqualToConstant:44],
+            [_verifyBtn.bottomAnchor constraintEqualToAnchor:card.bottomAnchor],
+
+            // 错误提示 (位于输入框下方)
+            [_statusLabel.topAnchor constraintEqualToAnchor:_inputField.bottomAnchor constant:5],
+            [_statusLabel.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:15],
+            [_statusLabel.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-15],
+        ]];
+    }
+    return self;
+}
+
+- (void)handleVerify {
+    [self.inputField resignFirstResponder]; // 收起键盘
+    NSString *code = self.inputField.text;
+
+    if (code.length == 0) {
+        [self showError:@"请输入激活码"];
         return;
     }
 
-    // 有激活码，进行网络校验
-    NSURL *url = [NSURL URLWithString:[NSString stringWithFormat:@"%@?code=%@&uuid=%@", VERIFY_URL, savedCode, deviceUUID]];
-    NSURLRequest *request = [NSURLRequest requestWithURL:url];
+    // 显示加载中...
+    self.verifyBtn.enabled = NO;
+    self.verifyBtn.alpha = 0.5;
+    self.verifyBtn.titleLabel.text = @"验证中...";
 
-    [NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (error) {
-            // 网络错误处理：为了防破解，网络不通通常视为验证失败或重试
-            dispatch_async(dispatch_get_main_queue(), ^{
-                showMessageAlert(@"网络错误", @"无法连接服务器，请检查网络。", YES);
-            });
-            return;
-        }
+    // 异步执行网络请求，防止卡死UI
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        BOOL success = verifyCode(code);
 
-        NSString *resultStr = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-        // 假设后端返回 "OK" 代表成功，其他均为失败信息
-        if ([resultStr isEqualToString:@"OK"]) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                // 验证成功，短暂提示
-                UIAlertController *toast = [UIAlertController alertControllerWithTitle:@"欢迎使用" message:@"授权验证通过" preferredStyle:UIAlertControllerStyleAlert];
-                UIWindow *window = [UIApplication sharedApplication].keyWindow;
-                [window.rootViewController presentViewController:toast animated:YES completion:^{
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-                        [toast dismissViewControllerAnimated:YES completion:nil];
-                    });
-                }];
-            });
-        } else {
-            // 验证失败（过期、被顶号、无效），清除本地缓存并强制弹窗
-            saveActivationCode(@"");
-            dispatch_async(dispatch_get_main_queue(), ^{
-                showMessageAlert(@"激活失败", resultStr ?: @"激活码无效或已过期", YES);
-                // 提示完后进入死循环弹窗
-                showInputAlert(nil);
-            });
-        }
-    }] resume];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.verifyBtn.enabled = YES;
+            self.verifyBtn.alpha = 1.0;
+            [self.verifyBtn setTitle:@"验证" forState:UIControlStateNormal];
+
+            if (success) {
+                // 验证成功：保存状态并移除弹窗
+                isVerified = YES;
+                [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"Vone_Is_Activated"];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+                [self removeFromSuperview]; // 移除自己
+            } else {
+                // 验证失败：显示错误提示
+                [self showError:@"激活码无效或已过期"];
+                self.inputField.text = @""; // 清空输入框
+                [self.inputField becomeFirstResponder]; // 重新唤起键盘
+            }
+        });
+    });
 }
 
+- (void)showError:(NSString *)msg {
+    self.statusLabel.text = msg;
+    self.statusLabel.alpha = 1.0;
+    // 2秒后自动消失
+    [UIView animateWithDuration:0.3 delay:2.0 options:UIViewAnimationOptionCurveEaseOut animations:^{
+        self.statusLabel.alpha = 0;
+    } completion:nil];
+}
+
+@end
+
+// --- Hook 微信入口 ---
 %hook MicroMessengerAppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-    %orig;
+    BOOL ret = %orig;
 
-    // 延迟 2秒 执行，防止影响微信启动动画导致闪退
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        startVerificationProcess();
-    });
+    // 检查是否已经激活过 (可选：如果想每次启动都验证，删掉这个if判断)
+    if (![[NSUserDefaults standardUserDefaults] boolForKey:@"Vone_Is_Activated"]) {
 
-    return YES;
+        // 创建全屏覆盖层
+        blockWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        blockWindow.windowLevel = UIWindowLevelAlert + 1; // 层级最高，盖住一切
+        blockWindow.backgroundColor = [UIColor clearColor];
+
+        ActivationView *alertView = [[ActivationView alloc] initWithFrame:blockWindow.bounds];
+        [blockWindow addSubview:alertView];
+
+        [blockWindow makeKeyAndVisible]; // 强制显示
+    }
+
+    return ret;
 }
 
+%end
+
+// 拦截返回手势，防止用户通过侧滑退出App来绕过验证
+%hook UINavigationController
+- (BOOL)navigationBar:(UINavigationBar *)navigationBar shouldPopItem:(UINavigationItem *)item {
+    if (!isVerified && blockWindow) {
+        // 如果没验证且弹窗还在，禁止返回
+        return NO;
+    }
+    return %orig;
+}
 %end
