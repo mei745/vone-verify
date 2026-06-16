@@ -1,6 +1,6 @@
-# 优化点：移除 arm64e 以兼容老设备，升级 SDK 版本
-export ARCHS = arm64
-export TARGET = iphone:clang:16.5:16.5
+export ARCHS = arm64 arm64e
+# 将 14.0 改为 16.5，与下载的 SDK 保持一致
+export TARGET = iphone:clang:latest:16.5
 
 include $(THEOS)/makefiles/common.mk
 
@@ -12,4 +12,4 @@ VoneVerify_CFLAGS = -fobjc-arc
 include $(THEOS_MAKE_PATH)/tweak.mk
 
 after-install::
-install.exec "killall -9 WeChat"
+	install.exec "killall -9 WeChat"
