@@ -2,8 +2,8 @@ name: Build Tweak
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
+    branches: [ main ] # 或者 master，取决于你的分支名
+  workflow_dispatch:   # 允许手动触发
 
 jobs:
   build:
@@ -24,16 +24,15 @@ jobs:
         export THEOS=$HOME/theos
         echo "THEOS=$THEOS" >> $GITHUB_ENV
 
-        # 2. 下载 iOS SDK (使用 xybp888 的稳定镜像)
+        # 2. 下载 iOS 16.5 SDK (稳定版)
         mkdir -p $THEOS/sdks
-        echo "Downloading iOS 16.5 SDK..."
+        # 使用 xybp888 的稳定镜像
         curl -L -o /tmp/iPhoneOS16.5.sdk.tar.xz \
           "https://github.com/xybp888/iOS-SDKs/raw/main/iPhoneOS16.5.sdk.tar.xz"
-
-        # 3. 校验文件大小 (防止下载到 404 页面)
-        FILE_SIZE=$(stat -c%s "/tmp/iPhoneOS16.5.sdk.tar.xz")
-        if [ "$FILE_SIZE" -lt 100000000 ]; then
-          echo "Error: SDK download failed! File size is only $FILE_SIZE bytes."
+        
+        # 检查文件大小，防止下载失败
+        if [ $(stat -c%s "/tmp/iPhoneOS16.5.sdk.tar.xz") -lt 100000000 ]; then
+          echo "Error: SDK file is too small, download failed."
           exit 1
         fi
 
