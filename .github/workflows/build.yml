@@ -3,36 +3,31 @@ name: Build Tweak
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # 允许手动点击按钮触发编译
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest # 使用 Ubuntu 虚拟机
+    runs-on: ubuntu-latest
+    container:
+      image: sickcodes/docker-osx:latest # 或者使用专门的 theos docker 镜像
+      options: --privileged
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+    - uses: actions/checkout@v2
 
     - name: Setup Theos
       run: |
-        sudo apt-get update
-        sudo apt-get install -y git dpkg-dev libssl-dev
-        
-        # 下载脚本
-        curl -sLO https://raw.githubusercontent.com/theos/theos/master/bin/install-theos
-        # 赋予执行权限
-        chmod +x install-theos
-        # 运行安装 (加上 -y 自动确认)
-        bash ./install-theos -y
-        
-        echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-        echo "$HOME/theos/bin" >> $GITHUB_PATH
+        apt-get update && apt-get install -y git curl sudo
+        git clone --recursive https://github.com/theos/theos.git /opt/theos
+        export THEOS=/opt/theos
 
     - name: Build Package
-      run: make package FINALPACKAGE=1
+      run: |
+        export THEOS=/opt/theos
+        make package FINALPACKAGE=1
 
     - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v2
       with:
-        name: vone-verify-deb
+        name: VoneVerify.deb
         path: packages/*.deb
