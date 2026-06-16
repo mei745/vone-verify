@@ -28,15 +28,30 @@ jobs:
         echo "THEOS=$THEOS" >> $GITHUB_ENV
 
         # 3. 下载 iOS SDK (关键修复步骤)
-        # 使用 Xcode 官方提取的 SDK，来源稳定，支持 iOS 17+
-        echo "Downloading iPhoneOS17.5.sdk..."
+        # 使用 xybp888 维护的稳定镜像源，避免 GitHub 链接失效问题
+        echo "Downloading iOS SDK..."
         mkdir -p $THEOS/sdks
-        curl -L -o /tmp/iPhoneOS17.5.sdk.tar.xz \
-          "https://github.com/arichornlover/sdks/raw/main/iPhoneOS17.5.sdk.tar.xz"
 
-        # 4. 解压 SDK
-        tar -xJf /tmp/iPhoneOS17.5.sdk.tar.xz -C $THEOS/sdks
-        ls -la $THEOS/sdks # 打印确认 SDK 是否已存在
+        # 定义 SDK 文件名和下载链接
+        SDK_FILE="iPhoneOS16.5.sdk.tar.xz"
+        SDK_URL="https://github.com/xybp888/iOS-SDKs/raw/master/iPhoneOS16.5.sdk.tar.xz"
+
+        # 下载文件
+        curl -L "$SDK_URL" -o "$THEOS/sdks/$SDK_FILE"
+
+        # 【重要】校验文件大小，防止下载到 404 页面
+        FILE_SIZE=$(stat -c%s "$THEOS/sdks/$SDK_FILE")
+        if [ "$FILE_SIZE" -lt 10000000 ]; then
+            echo "::error::Download failed! File size is too small ($FILE_SIZE bytes). It's likely a 404 page."
+            exit 1
+        fi
+
+        # 解压 SDK
+        echo "Extracting SDK..."
+        tar -xf "$THEOS/sdks/$SDK_FILE" -C $THEOS/sdks
+        rm "$THEOS/sdks/$SDK_FILE" # 删除压缩包以节省空间
+
+        echo "Theos setup complete."
 
     - name: Build Package
       run: make package FINALPACKAGE=1
