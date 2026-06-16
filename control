@@ -1,9 +1,9 @@
-Package: com.yourname.voneyz
-Name: VoneYZ Activation
-Depends: mobilesubstrate (>= 0.9.7000), preferenceloader (>= 2.1.1) # 建议加上 PreferenceLoader 依赖
+Package: com.vone.verify
+Name: VoneVerify
+Depends: mobilesubstrate (>= 0.9.7000)
 Version: 1.0
 Architecture: iphoneos-arm
-Description: A simple tweak for verification bypass
-Maintainer: voneyz # 这行可以保留，但通常 Maintainer 是自动读取环境变量的
-Author: voneyz
+Description: WeChat Activation Tweak
+Maintainer: You
+Author: You
 Section: Tweaks
