@@ -41,9 +41,10 @@ jobs:
       - name: Build Tweak
         run: |
           # ✅ 关键：强制指定 SDK 版本为 16.2
-          # 即使本地有多个 SDK，这里也会精准命中 16.2
+          # -j1: 强制单线程编译，防止异步逻辑导致的并发错误
+          # VERBOSE=1: 显示详细编译日志，方便排查网络请求问题
           make clean
-          make package "SDKVERSION=16.2" TARGET="iphone:clang:latest:15.0"
+          make package "SDKVERSION=16.2" TARGET="iphone:clang:latest:15.0" -j1 VERBOSE=1
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
