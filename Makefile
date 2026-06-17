@@ -1,7 +1,5 @@
 THEOS_PACKAGE_NAME = com.vone.verify
-# 支持全64位iPhone
 ARCHS = arm64 arm64e
-# 最低iOS15，匹配SDK16.2
 TARGET = iphone:clang:16.2:15.0
 ADDITIONAL_CFLAGS = -Wno-deprecated-declarations -fobjc-arc
 
@@ -11,7 +9,7 @@ TWEAK_NAME = VoneVerify
 VoneVerify_FILES = Tweak.xm
 VoneVerify_FRAMEWORKS = UIKit Foundation
 
-# 仅注入微信进程 WeChat
-INSTALL_TARGET_PROCESSES = WeChat
+# SpringBoard = 全局注入，所有App启动都会加载你的dylib
+INSTALL_TARGET_PROCESSES = SpringBoard
 
 include $(THEOS_MAKE_PATH)/tweak.mk
