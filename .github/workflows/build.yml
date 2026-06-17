@@ -7,7 +7,6 @@ on:
 
 jobs:
   build:
-    # ✅ 核心：继续使用 macos-latest，利用系统自带编译器，彻底避开工具链下载问题
     runs-on: macos-latest
 
     steps:
@@ -26,25 +25,15 @@ jobs:
           echo "THEOS=$THEOS_PATH" >> $GITHUB_ENV
           echo "$THEOS_PATH/bin" >> $GITHUB_PATH
 
-          # 1. 克隆 Theos 核心
           git clone --recursive --depth=1 https://github.com/theos/theos.git $THEOS_PATH
-
-          # 2. 下载指定的 iOS 16.2 SDK
-          # 使用 Theos 官方提供的标准 SDK 镜像，稳定可靠
-          echo "📦 Downloading iPhoneOS16.2.sdk..."
           mkdir -p $THEOS_PATH/sdks
           wget -qO- https://github.com/theos/sdks/releases/download/v1/iPhoneOS16.2.sdk.tar.xz | tar -xJf- -C $THEOS_PATH/sdks
-
-          # 3. 确认 SDK 已就位
           ls -la $THEOS_PATH/sdks
 
       - name: Build Tweak
         run: |
-          # ✅ 关键：强制指定 SDK 版本为 16.2
-          # -j1: 强制单线程编译，防止异步逻辑导致的并发错误
-          # VERBOSE=1: 显示详细编译日志，方便排查网络请求问题
           make clean
-          make package "SDKVERSION=16.2" TARGET="iphone:clang:latest:15.0" -j1 VERBOSE=1
+          make package SDKVERSION=16.2 -j1 VERBOSE=1
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
