@@ -1,80 +1,74 @@
-name: Build Tweak (iOS 16.2 SDK + Full Toolchain)
+name: Build Tweak (Stable & Automated)
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
 
-# 定义全局环境变量
-env:
-  THEOS: ${{ github.workspace }}/theos
-  TARGET: iphone:clang:latest:15.0 # 兼容 iOS 15+
-  ARCHS: arm64 arm64e
-
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. 检出代码
+    # 1. 检出代码 (必须开启 recursive 以拉取 theos 子模块)
     - uses: actions/checkout@v4
       with:
         submodules: recursive
 
-    # 2. 安装依赖 + 手动配置 ldid + 配置 Toolchain
-    - name: Install Dependencies & Tools
+    # 2. 自动配置环境 (核心修复步骤)
+    # 这里我们不再手动 apt install ldid，而是让脚本自动处理一切
+    - name: Setup Theos Environment
       run: |
-        # 安装基础编译工具 (不再尝试 apt install ldid)
+        # 定义变量
+        export THEOS="$GITHUB_WORKSPACE/theos"
+
+        # A. 安装基础依赖
         sudo apt-get update
         sudo apt-get install -y git curl rsync zip unzip libssl-dev libcurl4-openssl-dev clang make dpkg-dev
 
-        # --- 核心修复：手动下载 ldid (x86_64 版本) ---
-        echo "Installing ldid manually..."
+        # B. 安装/更新 ldid (使用 Procursus 团队维护的二进制，最稳)
+        # 注意：GitHub Actions 默认是 x86_64 架构
         curl -LO https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
         chmod +x ldid_linux_x86_64
         sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
-        ldid -v # 验证是否安装成功
 
-        # --- 核心修复：下载 iOS Toolchain (Linux版) ---
-        # Theos 需要这个才能找到 clang++
-        echo "Setting up iOS Toolchain..."
-        mkdir -p $THEOS/toolchain/linux/iphone
-        # 使用 Procursus 的 toolchain (包含 clang, ld, etc.)
-        curl -L https://github.com/ProcursusTeam/Procursus/releases/download/v3.0.0/ios-toolchain-linux-x86_64.tar.xz | tar -xJ -C $THEOS/toolchain/linux/iphone --strip-components=1
+        # C. 安装 iOS Toolchain (Procursus Team 版本)
+        # 这是解决 "No such file or directory ... clang++" 的关键
+        mkdir -p $THEOS/toolchain
+        curl -L https://github.com/ProcursusTeam/ios-toolchain/releases/download/latest/ios-toolchain-linux-x86_64.tar.xz | tar -xJ -C $THEOS/toolchain --strip-components=1
 
-    # 3. 安装 Theos
-    - name: Setup Theos
-      run: |
-        git clone --recursive https://github.com/theos/theos.git $THEOS
+        # D. 确保 SDK 存在 (如果没有，尝试从 toolchain 中链接或下载)
+        # 很多 toolchain 自带 SDK，我们检查一下
+        if [ ! -d "$THEOS/sdks/iPhoneOS16.2.sdk" ]; then
+           echo "SDK not found in default path, checking toolchain..."
+           # 如果 toolchain 里有，就软链接过去
+           if [ -d "$THEOS/toolchain/sysroots/iPhoneOS16.2.sdk" ]; then
+             ln -s $THEOS/toolchain/sysroots/iPhoneOS16.2.sdk $THEOS/sdks/iPhoneOS16.2.sdk
+           else
+             # 如果还没有，下载一个通用的 SDK (这里用 16.2 举例)
+             curl -L https://github.com/xybp888/iOS-SDKs/archive/refs/heads/master.zip -o sdks.zip
+             unzip -q sdks.zip
+             mv iOS-SDKs-master/iPhoneOS16.2.sdk $THEOS/sdks/
+             rm -rf sdks.zip iOS-SDKs-master
+           fi
+        fi
 
-    # 4. 下载 iOS 16.2 SDK
-    - name: Setup iOS 16.2 SDK
-      run: |
-        # 创建 SDK 目录
-        mkdir -p $THEOS/sdks
+        # E. 打印环境确认 (Debug)
+        echo "THEOS=$THEOS"
+        which ldid
+        ls $THEOS/toolchain/linux/iphone/bin/clang++ || echo "Warning: Clang not found!"
+        ls $THEOS/sdks/
 
-        # 从 xybp888 仓库只拉取 iPhoneOS16.2.sdk
-        # 使用 sparse-checkout 避免下载整个巨大的仓库
-        git clone --filter=blob:none --no-checkout https://github.com/xybp888/iOS-SDKs.git temp_sdk
-        cd temp_sdk
-        git sparse-checkout set iPhoneOS16.2.sdk
-        git checkout
-        mv iPhoneOS16.2.sdk $THEOS/sdks/
-        cd ..
-        rm -rf temp_sdk
-
-    # 5. 编译项目
+    # 3. 编译项目
     - name: Build Tweak
+      env:
+        THEOS: ${{ github.workspace }}/theos
+        TARGET: iphone:clang:latest:15.0
+        ARCHS: arm64 arm64e
       run: |
-        # 打印环境信息用于调试
-        echo "Current Directory: $(pwd)"
-        echo "THEOS Path: $THEOS"
-        echo "Target: $TARGET"
-
-        # 执行编译
         make package FINALPACKAGE=1
 
-    # 6. 上传产物
+    # 4. 上传产物
     - uses: actions/upload-artifact@v4
       with:
         name: Tweak-Package
