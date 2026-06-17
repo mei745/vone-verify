@@ -1,9 +1,15 @@
-name: Build Tweak (Auto-Fix Version)
+name: Build Tweak (Native & Stable)
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
+
+# 定义全局环境变量
+env:
+  THEOS: ${{ github.workspace }}/theos
+  TARGET: iphone:clang:latest:15.0 # 兼容 iOS 15+
+  ARCHS: arm64 arm64e
 
 jobs:
   build:
@@ -15,27 +21,47 @@ jobs:
       with:
         submodules: recursive
 
-    # 2. 自动配置 Theos 环境 (包含 ldid, toolchain, sdk)
-    # 这一步由社区维护的大神编写，完美解决了下载失败和格式错误的问题
-    - name: Setup Theos Environment
-      uses: dhinakg/theos-action@main
-      with:
-        # 这里指定你要用的 SDK 版本，如果没有会自动下载
-        sdk-version: "16.2"
+    # 2. 安装基础依赖 + 配置 ldid
+    - name: Install Dependencies & ldid
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential curl git perl xz-utils
+        # 下载并安装 ldid (Procursus 版本)
+        curl -LO https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
+        chmod +x ldid_linux_x86_64
+        sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
 
-    # 3. 编译项目
+    # 3. 克隆 Theos
+    - name: Setup Theos
+      run: |
+        git clone --recursive https://github.com/theos/theos.git $THEOS
+
+    # 4. 下载并配置 iOS 16.2 SDK
+    - name: Setup iOS 16.2 SDK
+      run: |
+        mkdir -p $THEOS/sdks
+        # 使用稳定的 SDK 下载源
+        curl -L -o $THEOS/sdks/iPhoneOS16.2.sdk.tar.xz https://github.com/xybp888/iOS-SDKs/releases/download/iPhoneOS16.2.sdk/iPhoneOS16.2.sdk.tar.xz
+        tar -xf $THEOS/sdks/iPhoneOS16.2.sdk.tar.xz -C $THEOS/sdks/
+        rm $THEOS/sdks/iPhoneOS16.2.sdk.tar.xz
+
+    # 5. 下载并配置 Linux Toolchain (关键步骤！)
+    - name: Setup Toolchain
+      run: |
+        mkdir -p $THEOS/toolchain/linux
+        # 下载 Procursus Toolchain (x86_64 版本)
+        curl -L -o $THEOS/toolchain/linux/iphone.tar.xz https://github.com/ProcursusTeam/procursus/releases/download/v1.0/iphone-linux-x86_64.tar.xz
+        # 解压到指定目录
+        tar -xf $THEOS/toolchain/linux/iphone.tar.xz -C $THEOS/toolchain/linux/
+        rm $THEOS/toolchain/linux/iphone.tar.xz
+
+    # 6. 编译 Tweak
     - name: Build Tweak
       run: |
         make package FINALPACKAGE=1
-      env:
-        THEOS: ${{ github.workspace }}/theos
-        # 根据你的需求调整最低兼容版本
-        TARGET: iphone:clang:latest:15.0
-        ARCHS: arm64 arm64e
 
-    # 4. 上传产物
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+    # 7. 上传产物
+    - uses: actions/upload-artifact@v4
       with:
-        name: VoneVerify-Tweak
+        name: Tweak-Package
         path: packages/*.deb
