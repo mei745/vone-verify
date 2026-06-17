@@ -13,5 +13,3 @@ include $(THEOS_MAKE_PATH)/tweak.mk
 
 after-install::
 	install.exec "killall -9 WeChat"
-# 在 Makefile 中添加这一行
-ADDITIONAL_CFLAGS += -Wno-deprecated-declarations
