@@ -1,4 +1,4 @@
-name: Build Tweak (Stable & Automated)
+name: Build Tweak (Auto-Fix Version)
 
 on:
   push:
@@ -15,61 +15,27 @@ jobs:
       with:
         submodules: recursive
 
-    # 2. 自动配置环境 (核心修复步骤)
-    # 这里我们不再手动 apt install ldid，而是让脚本自动处理一切
+    # 2. 自动配置 Theos 环境 (包含 ldid, toolchain, sdk)
+    # 这一步由社区维护的大神编写，完美解决了下载失败和格式错误的问题
     - name: Setup Theos Environment
-      run: |
-        # 定义变量
-        export THEOS="$GITHUB_WORKSPACE/theos"
-
-        # A. 安装基础依赖
-        sudo apt-get update
-        sudo apt-get install -y git curl rsync zip unzip libssl-dev libcurl4-openssl-dev clang make dpkg-dev
-
-        # B. 安装/更新 ldid (使用 Procursus 团队维护的二进制，最稳)
-        # 注意：GitHub Actions 默认是 x86_64 架构
-        curl -LO https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
-        chmod +x ldid_linux_x86_64
-        sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
-
-        # C. 安装 iOS Toolchain (Procursus Team 版本)
-        # 这是解决 "No such file or directory ... clang++" 的关键
-        mkdir -p $THEOS/toolchain
-        curl -L https://github.com/ProcursusTeam/ios-toolchain/releases/download/latest/ios-toolchain-linux-x86_64.tar.xz | tar -xJ -C $THEOS/toolchain --strip-components=1
-
-        # D. 确保 SDK 存在 (如果没有，尝试从 toolchain 中链接或下载)
-        # 很多 toolchain 自带 SDK，我们检查一下
-        if [ ! -d "$THEOS/sdks/iPhoneOS16.2.sdk" ]; then
-           echo "SDK not found in default path, checking toolchain..."
-           # 如果 toolchain 里有，就软链接过去
-           if [ -d "$THEOS/toolchain/sysroots/iPhoneOS16.2.sdk" ]; then
-             ln -s $THEOS/toolchain/sysroots/iPhoneOS16.2.sdk $THEOS/sdks/iPhoneOS16.2.sdk
-           else
-             # 如果还没有，下载一个通用的 SDK (这里用 16.2 举例)
-             curl -L https://github.com/xybp888/iOS-SDKs/archive/refs/heads/master.zip -o sdks.zip
-             unzip -q sdks.zip
-             mv iOS-SDKs-master/iPhoneOS16.2.sdk $THEOS/sdks/
-             rm -rf sdks.zip iOS-SDKs-master
-           fi
-        fi
-
-        # E. 打印环境确认 (Debug)
-        echo "THEOS=$THEOS"
-        which ldid
-        ls $THEOS/toolchain/linux/iphone/bin/clang++ || echo "Warning: Clang not found!"
-        ls $THEOS/sdks/
+      uses: dhinakg/theos-action@main
+      with:
+        # 这里指定你要用的 SDK 版本，如果没有会自动下载
+        sdk-version: "16.2"
 
     # 3. 编译项目
     - name: Build Tweak
-      env:
-        THEOS: ${{ github.workspace }}/theos
-        TARGET: iphone:clang:latest:15.0
-        ARCHS: arm64 arm64e
       run: |
         make package FINALPACKAGE=1
+      env:
+        THEOS: ${{ github.workspace }}/theos
+        # 根据你的需求调整最低兼容版本
+        TARGET: iphone:clang:latest:15.0
+        ARCHS: arm64 arm64e
 
     # 4. 上传产物
-    - uses: actions/upload-artifact@v4
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
       with:
-        name: Tweak-Package
+        name: VoneVerify-Tweak
         path: packages/*.deb
