@@ -1,4 +1,4 @@
-name: Build Tweak (Fixed SDK Source)
+name: Build Tweak (Stable Toolchain & SDK)
 
 on:
   push:
@@ -15,17 +15,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. 检出你的代码
+    # 1. 检出代码
     - uses: actions/checkout@v4
       with:
         submodules: recursive
 
-    # 2. 安装依赖和 ldid
+    # 2. 安装基础依赖和 ldid
     - name: Install Dependencies & ldid
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential dpkg-dev libssl-dev perl python3 ruby xz-utils git curl
-        # 下载并安装 ldid
+        # 下载并安装 ldid (Procursus Team 稳定版)
         curl -LO https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
         chmod +x ldid_linux_x86_64
         sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
@@ -35,38 +35,44 @@ jobs:
       run: |
         git clone --recursive https://github.com/theos/theos.git $THEOS
 
-    # 4. 【关键修改】从这里下载 SDK
+    # 4. 安装 iOS 16.2 SDK (从你提供的 xybp888 仓库拉取)
     - name: Setup iOS 16.2 SDK
       run: |
-        # 创建 sdks 目录
         mkdir -p $THEOS/sdks
+        # 使用 git clone 获取单个 SDK 文件夹，比 curl 更可靠
+        git clone --depth 1 https://github.com/xybp888/iOS-SDKs.git /tmp/ios-sdks
+        cp -R /tmp/ios-sdks/iPhoneOS16.2.sdk $THEOS/sdks/
+        rm -rf /tmp/ios-sdks
 
-        # 使用 git clone 单独拉取 iPhoneOS16.2.sdk 文件夹
-        # --depth 1 表示只下载最新版本，速度快
-        # --no-checkout 先不检出版本库，配合 sparse-checkout 只下载指定文件夹
-        git clone --depth 1 --filter=blob:none --sparse https://github.com/xybp888/iOS-SDKs.git /tmp/ios-sdks
-        cd /tmp/ios-sdks
-        git sparse-checkout set iPhoneOS16.2.sdk
-        git checkout
-
-        # 移动 SDK 到 Theos 目录
-        mv iPhoneOS16.2.sdk $THEOS/sdks/
-
-    # 5. 安装 Toolchain (编译器)
+    # 5. 安装 Toolchain (修复点：更换为稳定的 v161 版本)
     - name: Setup Toolchain
       run: |
-        # 下载 Procursus 团队的 Linux x86_64 Toolchain
-        # 注意：这里必须用 -L 跟随跳转，且地址是最新的
-        curl -L -o /tmp/toolchain.tar.xz https://github.com/ProcursusTeam/procursus/releases/download/v161/iphoneos-clang-14.0.0-darwin21-x86_64.tar.xz
-        tar -xf /tmp/toolchain.tar.xz -C $THEOS
+        # 使用 Procursus Team 的稳定版 Toolchain (Clang 14.0.0 for iOS 16)
+        TOOLCHAIN_URL="https://github.com/ProcursusTeam/procursus/releases/download/v161/iphoneos-clang-14.0.0-darwin21-x86_64.tar.xz"
 
-    # 6. 编译
+        echo "Downloading toolchain..."
+        # -L: 跟随重定向, -o: 指定输出文件名, --fail: 如果HTTP错误则直接失败
+        curl -L -o /tmp/toolchain.tar.xz --fail "$TOOLCHAIN_URL"
+
+        # 检查文件大小，防止下载到空文件或网页
+        FILE_SIZE=$(stat -c%s "/tmp/toolchain.tar.xz")
+        if [ "$FILE_SIZE" -lt 1000 ]; then
+          echo "Error: Downloaded file is too small ($FILE_SIZE bytes). Likely a 404 page."
+          exit 1
+        fi
+
+        echo "Extracting toolchain to $THEOS..."
+        tar -xf /tmp/toolchain.tar.xz -C $THEOS
+        rm -f /tmp/toolchain.tar.xz
+
+    # 6. 编译 Tweak
     - name: Build Tweak
       run: |
+        cd ${{ github.workspace }}
         make package FINALPACKAGE=1
 
     # 7. 上传产物
     - uses: actions/upload-artifact@v4
       with:
-        name: Tweak-Package
+        name: Compiled-Tweak
         path: packages/*.deb
