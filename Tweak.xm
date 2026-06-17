@@ -2,17 +2,16 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
-// --- 统一配置宏（便于修改）---
+// --- 统一配置宏 ---
 #define SERVER_URL @"shturl.cc/KrkZmtTjx/verify.php"
 #define PLUGIN_NAME @"VoneVerify"
 #define VERIFY_STATUS_KEY @"VoneVerify_Status"
 #define WINDOW_MAX_LEVEL 1000000.0f
 #define PLACEHOLDER_TEXT @"请输入激活码"
-#define TITLE_TEXT @"需要验证"
+#define TITLE_TEXT @"软件激活验证"
 
 // 安全获取UUID + URL编码，兜底空字符串
 static NSString* getDeviceUUID() {
-    // UI相关操作强制切主线程
     if (![NSThread isMainThread]) {
         __block NSString *result = nil;
         dispatch_sync(dispatch_get_main_queue(), ^{
@@ -27,18 +26,16 @@ static NSString* getDeviceUUID() {
     return [rawUUID stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
 }
 
-// dylib加载时直接执行，绕过App代理时序问题（解决微信不弹窗核心）
+// dylib加载即执行，全局所有App生效
 %ctor {
-    // 强制主线程执行UI逻辑
     dispatch_async(dispatch_get_main_queue(), ^{
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
             NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
             BOOL isVerified = [defaults boolForKey:VERIFY_STATUS_KEY];
-            // 已验证直接返回，不创建窗口
             if (isVerified) return;
 
-            // 顶层全屏验证窗口，兼容全iOS版本层级
+            // 顶层全屏窗口，覆盖所有App界面
             UIWindow *__weak weakWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
             weakWindow.windowLevel = WINDOW_MAX_LEVEL;
             weakWindow.backgroundColor = [UIColor blackColor];
@@ -49,7 +46,7 @@ static NSString* getDeviceUUID() {
             [weakWindow addSubview:container];
 
             // 点击空白收起键盘
-            UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:nil action:@selector(endEditing:)];
+            UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:container action:@selector(endEditing:)];
             [container addGestureRecognizer:tap];
 
             // 标题
@@ -87,12 +84,11 @@ static NSString* getDeviceUUID() {
             [container addSubview:statusLabel];
 
             __block BOOL isLoading = NO;
-            // 验证逻辑Block，使用弱窗口避免循环引用
             void (^verifyLogic)(UIButton *) = ^(UIButton *sender) {
                 if (isLoading) return;
                 isLoading = YES;
                 sender.enabled = NO;
-                statusLabel.text = @"正在连接服务器...";
+                statusLabel.text = @"正在连接服务器验证...";
 
                 NSString *uuid = getDeviceUUID();
                 NSString *rawCode = codeField.text ?: @"";
@@ -120,32 +116,29 @@ static NSString* getDeviceUUID() {
                         NSError *jsonErr;
                         NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonErr];
                         if (jsonErr || !json) {
-                            statusLabel.text = @"服务器返回格式错误";
+                            statusLabel.text = @"服务器返回数据格式异常";
                             statusLabel.textColor = [UIColor redColor];
                             return;
                         }
 
                         NSNumber *retCode = json[@"code"];
                         if (retCode.intValue == 200) {
-                            statusLabel.text = @"验证成功！即将进入应用...";
+                            statusLabel.text = @"验证成功，可正常使用所有软件！";
                             statusLabel.textColor = [UIColor greenColor];
                             [defaults setBool:YES forKey:VERIFY_STATUS_KEY];
-                            // 删除废弃 synchronize
-                            
+
                             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                                 weakWindow.hidden = YES;
-                                // 释放窗口内存
                                 weakWindow = nil;
                             });
                         } else {
-                            statusLabel.text = json[@"msg"] ?: @"激活码错误，请重新输入";
+                            statusLabel.text = json[@"msg"] ?: @"激活码无效，请重新输入";
                             statusLabel.textColor = [UIColor redColor];
                         }
                     });
                 }] resume];
             };
 
-            // 绑定Block到按钮，方法编码 v@:@ 无问题
             objc_setAssociatedObject(verifyBtn, "verifyBlock", verifyLogic, OBJC_ASSOCIATION_COPY_NONATOMIC);
             IMP btnImp = imp_implementationWithBlock(^(UIButton *self, SEL _cmd, UIButton *sender) {
                 void (^block)(UIButton *) = objc_getAssociatedObject(self, "verifyBlock");
@@ -156,5 +149,3 @@ static NSString* getDeviceUUID() {
         });
     });
 }
-
-// 原有UIApplication钩子可以直接整个删除，不再需要
