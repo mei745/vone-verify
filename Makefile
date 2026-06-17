@@ -1,15 +1,18 @@
-export ARCHS = arm64 arm64e
-# 将 14.0 改为 16.2，与下载的 SDK 保持一致
-export TARGET = iphone:clang:latest:16.2
+# Makefile
+
+# 你的包名
+THEOS_PACKAGE_NAME = com.vone.verify
+
+# 必须指定最低版本，否则默认 latest 可能会出错
+TARGET = iphone:clang:latest:15.0
+
+# --- 关键修复：添加这行来忽略弃用警告 ---
+ADDITIONAL_CFLAGS = -Wno-deprecated-declarations
 
 include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = VoneVerify
-
 VoneVerify_FILES = Tweak.xm
-VoneVerify_CFLAGS = -fobjc-arc
+VoneVerify_FRAMEWORKS = UIKit Foundation
 
 include $(THEOS_MAKE_PATH)/tweak.mk
-
-after-install::
-	install.exec "killall -9 WeChat"
