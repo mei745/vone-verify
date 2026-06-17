@@ -1,67 +1,50 @@
-name: Build Tweak (iOS 15+ Compatible)
+name: Build Tweak (MacOS Native)
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
 
-env:
-  THEOS: ${{ github.workspace }}/theos
-  TARGET: iphone:clang:latest:15.0 # 关键：指定最低兼容版本为 iOS 15.0
-  ARCHS: arm64 arm64e             # 必须包含 arm64e 以支持 iPhone XS 及以后机型
-
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # ✅ 核心：继续使用 macos-latest，利用系统自带编译器，避开工具链下载问题
+    runs-on: macos-latest
 
     steps:
-    - uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-    - name: Install Dependencies & ldid
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential dpkg-dev libssl-dev perl python3 ruby xz-utils git curl
-        # 安装 ldid (用于签名 .dylib/.deb)
-        curl -LO https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
-        chmod +x ldid_linux_x86_64
-        sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
+      - name: Install Dependencies
+        run: |
+          brew install dpkg ldid wget || brew install dpkg ldid wget
 
-    - name: Setup Theos
-      run: |
-        git clone --recursive https://github.com/theos/theos.git $THEOS
+      - name: Setup Theos & Environment
+        run: |
+          THEOS_PATH="$HOME/theos"
+          echo "THEOS=$THEOS_PATH" >> $GITHUB_ENV
+          echo "$THEOS_PATH/bin" >> $GITHUB_PATH
 
-    - name: Setup iOS SDK
-      run: |
-        mkdir -p $THEOS/sdks
-        # 使用 xybp888/iOS-SDKs 仓库获取 iOS 16.2 SDK (稳定且兼容性好)
-        git clone --depth 1 https://github.com/xybp888/iOS-SDKs.git /tmp/ios-sdks
-        cp -R /tmp/ios-sdks/iPhoneOS16.2.sdk $THEOS/sdks/
-        rm -rf /tmp/ios-sdks
+          # 克隆 Theos
+          git clone --recursive --depth=1 https://github.com/theos/theos.git $THEOS_PATH
 
-    - name: Setup Toolchain
-      run: |
-        # 使用 Procursus v170 中的 darwin23 工具链 (目前最稳定)
-        TOOLCHAIN_URL="https://github.com/ProcursusTeam/procursus/releases/download/v170/iphoneos-clang-15.0.0-darwin23-x86_64.tar.xz"
-        echo "Downloading toolchain..."
-        curl -L -o /tmp/toolchain.tar.xz --fail "$TOOLCHAIN_URL"
-        FILE_SIZE=$(stat -c%s "/tmp/toolchain.tar.xz")
-        if [ "$FILE_SIZE" -lt 1000 ]; then
-          echo "Error: Downloaded file is too small ($FILE_SIZE bytes). Likely a 404 page."
-          exit 1
-        fi
-        echo "Extracting toolchain to $THEOS..."
-        tar -xf /tmp/toolchain.tar.xz -C $THEOS
-        rm -f /tmp/toolchain.tar.xz
+          # 下载 SDK (注意：这里依然使用你之前的源，如果这个源失效，见方案二)
+          # 但为了支持 iOS 26/27，建议手动指定一个较新的 SDK 链接，或者保留原样碰碰运气
+          mkdir -p $THEOS_PATH/sdks
+          wget -qO- https://github.com/theos/sdks/archive/master.zip | bsdtar -xvf- -C $THEOS_PATH/sdks --strip-components=1
 
-    - name: Build Tweak
-      run: |
-        cd ${{ github.workspace }}
-        make package FINALPACKAGE=1
+      - name: Build Tweak
+        run: |
+          # ✅ 关键：在这里强制指定最低版本为 15.0
+          # 这样即使是用 Mac 自带编译器，也会加上 -miphoneos-version-min=15.0 参数
+          export TARGET="iphone:clang:latest:15.0"
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: tweak-package
-        path: packages/*.deb
+          make clean
+          make package FINALPACKAGE=1
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: iOS-Tweak-Package
+          path: packages/*.deb
