@@ -1,6 +1,3 @@
-# Makefile
-
-# 你的包名
 THEOS_PACKAGE_NAME = com.vone.verify
 
 # 必须指定最低版本，否则默认 latest 可能会出错
