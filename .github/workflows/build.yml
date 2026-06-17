@@ -42,8 +42,8 @@ jobs:
 
     - name: Setup Toolchain
       run: |
-        # 使用 Procursus Team 的稳定版 Toolchain (Clang 14.0.0 for iOS 16)
-        TOOLCHAIN_URL="https://github.com/ProcursusTeam/procursus/releases/download/v161/iphoneos-clang-14.0.0-darwin21-x86_64.tar.xz"
+        # 使用 Procursus Team 的新版稳定 Toolchain (Clang 15.0.0 for iOS 16+)
+        TOOLCHAIN_URL="https://github.com/ProcursusTeam/procursus/releases/download/v170/iphoneos-clang-15.0.0-darwin22-x86_64.tar.xz"
         
         echo "Downloading toolchain..."
         curl -L -o /tmp/toolchain.tar.xz --fail "$TOOLCHAIN_URL"
