@@ -1,4 +1,4 @@
-name: Build Tweak (iOS 16+)
+name: Build Tweak (iOS 16.2 SDK)
 
 on:
   push:
@@ -12,40 +12,43 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        submodules: recursive # 必须开启递归克隆，否则 Theos 不完整
+        submodules: recursive # 必须开启递归克隆
 
     - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y git curl rsync zip unzip libssl-dev libcurl4-openssl-dev
+        sudo apt-get install -y git curl rsync zip unzip libssl-dev libcurl4-openssl-dev clang make dpkg-dev ldid
 
     - name: Setup Theos & iOS 16.2 SDK
       run: |
         # 1. 安装 Theos
         git clone --recursive https://github.com/theos/theos.git $HOME/theos
-
-        # 2. 准备 SDK 目录
         mkdir -p $HOME/theos/sdks
 
-        # 3. 使用 Git Sparse Checkout 只下载 iPhoneOS16.2.sdk
-        # 这样做比下载整个几百MB的仓库快得多
-        echo "正在从 xybp888/iOS-SDKs 获取 SDK..."
-        git init /tmp/sdk_repo
-        cd /tmp/sdk_repo
+        # 2. 使用 Git 稀疏检出下载 iPhoneOS16.2.sdk (速度快，不下载其他无关文件)
+        echo "正在从 xybp888 仓库获取 iOS 16.2 SDK..."
+        git init /tmp/sdk_fetch && cd /tmp/sdk_fetch
         git remote add origin https://github.com/xybp888/iOS-SDKs.git
         git config core.sparseCheckout true
         echo "iPhoneOS16.2.sdk/" >> .git/info/sparse-checkout
         git pull --depth=1 origin master
 
-        # 4. 移动 SDK 到 Theos 目录
-        mv /tmp/sdk_repo/iPhoneOS16.2.sdk $HOME/theos/sdks/
+        # 3. 移动并解压 SDK
+        mv /tmp/sdk_fetch/iPhoneOS16.2.sdk $HOME/theos/sdks/
+        rm -rf /tmp/sdk_fetch
+
+        echo "SDK 安装完成："
+        ls $HOME/theos/sdks/
 
     - name: Build Tweak
       env:
         THEOS: $HOME/theos
-        # 关键点：设置为 15.0 以支持 iOS 15 及以上所有版本
-        # 如果你想支持更老的系统（如 iOS 12），请把这里的 15.0 改为 12.0 并下载对应 SDK
+        # 【关键设置】
+        # 使用 16.2 SDK 进行编译，但通过 :15.0 声明最低支持 iOS 15
+        # 这样生成的包可以在 iOS 15 - iOS 27 上尝试运行
         TARGET: iphone:clang:latest:15.0
+        # 显式指定 SDK 路径，防止 Theos 自动寻找错误版本
+        SYSROOT: $HOME/theos/sdks/iPhoneOS16.2.sdk
       run: |
         cd $GITHUB_WORKSPACE
         make package FINALPACKAGE=1
@@ -53,5 +56,5 @@ jobs:
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Tweak-Package
+        name: Tweak-Package-iOS16.2
         path: packages/*.deb
