@@ -1,4 +1,4 @@
-name: Build Tweak (Stable Toolchain & SDK)
+name: Build Tweak (Fixed Toolchain URL)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 env:
   THEOS: ${{ github.workspace }}/theos
-  TARGET: iphone:clang:latest:15.0
+  TARGET: iphone:clang:latest:15.0 # 兼容 iOS 15+
   ARCHS: arm64 arm64e
 
 jobs:
@@ -15,55 +15,62 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    # 1. 检出代码
     - uses: actions/checkout@v4
       with:
         submodules: recursive
 
+    # 2. 安装依赖和 ldid
     - name: Install Dependencies & ldid
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential dpkg-dev libssl-dev perl python3 ruby xz-utils git curl
-        # 下载并安装 ldid (Procursus Team 稳定版)
+        # 下载并安装 ldid (使用 Procursus Team 稳定版)
         curl -LO https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
         chmod +x ldid_linux_x86_64
         sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
 
+    # 3. 安装 Theos
     - name: Setup Theos
       run: |
         git clone --recursive https://github.com/theos/theos.git $THEOS
 
+    # 4. 设置 iOS 16.2 SDK
     - name: Setup iOS 16.2 SDK
       run: |
         mkdir -p $THEOS/sdks
-        # 从 xybp888/iOS-SDKs 仓库克隆 iOS 16.2 SDK
+        # 使用 xybp888/iOS-SDKs 仓库获取 iOS 16.2 SDK
         git clone --depth 1 https://github.com/xybp888/iOS-SDKs.git /tmp/ios-sdks
         cp -R /tmp/ios-sdks/iPhoneOS16.2.sdk $THEOS/sdks/
         rm -rf /tmp/ios-sdks
 
+    # 5. 设置 Toolchain (关键修复步骤：已更新为 darwin23)
     - name: Setup Toolchain
       run: |
-        # 使用 Procursus Team 的新版稳定 Toolchain (Clang 15.0.0 for iOS 16+)
-        TOOLCHAIN_URL="https://github.com/ProcursusTeam/procursus/releases/download/v170/iphoneos-clang-15.0.0-darwin22-x86_64.tar.xz"
-        
+        # 修正后的链接：使用 darwin23 版本，这是 v170 中实际存在的文件
+        TOOLCHAIN_URL="https://github.com/ProcursusTeam/procursus/releases/download/v170/iphoneos-clang-15.0.0-darwin23-x86_64.tar.xz"
+
         echo "Downloading toolchain..."
         curl -L -o /tmp/toolchain.tar.xz --fail "$TOOLCHAIN_URL"
-        
+
         # 检查文件大小，防止下载到空文件或网页
         FILE_SIZE=$(stat -c%s "/tmp/toolchain.tar.xz")
         if [ "$FILE_SIZE" -lt 1000 ]; then
           echo "Error: Downloaded file is too small ($FILE_SIZE bytes). Likely a 404 page."
           exit 1
         fi
-        
+
         echo "Extracting toolchain to $THEOS..."
         tar -xf /tmp/toolchain.tar.xz -C $THEOS
         rm -f /tmp/toolchain.tar.xz
 
+    # 6. 编译插件
     - name: Build Tweak
       run: |
         cd ${{ github.workspace }}
         make package FINALPACKAGE=1
 
+    # 7. 上传产物
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
