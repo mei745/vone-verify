@@ -9,182 +9,135 @@
 // --- 全局变量 ---
 static BOOL isVerified = NO;
 static UIWindow *verifyWindow = nil;
-static dispatch_once_t onceToken; // 用于确保只执行一次
+static dispatch_once_t onceToken;
 
 // 获取设备唯一标识 (UUID)
 NSString* getDeviceUUID() {
     return [[UIDevice currentDevice] identifierForVendor].UUIDString;
 }
 
-// 保存验证状态到本地
-void saveVerificationStatus(BOOL status) {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults setBool:status forKey:@"VoneVerify_Status"];
-    [defaults synchronize];
-    isVerified = status;
-}
-
-// 检查是否已验证
-BOOL checkVerificationStatus() {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    return [defaults boolForKey:@"VoneVerify_Status"];
-}
-
-// --- 核心逻辑：显示验证弹窗 ---
+// 显示验证窗口
 void showVerifyWindow() {
-    // 如果已经验证过，直接返回，不显示弹窗
-    if (isVerified || checkVerificationStatus()) {
-        NSLog(@"[VoneVerify] Already verified, skipping window.");
-        return;
-    }
-
-    // 防止重复创建窗口
     if (verifyWindow) return;
 
-    NSLog(@"[VoneVerify] Creating verification window...");
-
-    // 1. 创建一个独立的 UIWindow，层级设为最高，覆盖所有应用界面
     verifyWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-    verifyWindow.windowLevel = CGFLOAT_MAX; // 关键：强制置顶
-    verifyWindow.backgroundColor = [UIColor colorWithWhite:0 alpha:0.8]; // 半透明黑色背景，遮挡下方内容
-    verifyWindow.hidden = NO;
+    verifyWindow.windowLevel = CGFLOAT_MAX; // 强制置顶
+    verifyWindow.backgroundColor = [UIColor colorWithWhite:0 alpha:0.8]; // 半透明遮罩
 
-    // 2. 创建主容器视图 (模仿你提供的图片风格)
+    UIViewController *rootVC = [[UIViewController alloc] init];
+    verifyWindow.rootViewController = rootVC;
+
+    // 创建验证框容器
     UIView *container = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 300, 200)];
-    container.center = verifyWindow.center;
+    container.center = CGPointMake([UIScreen mainScreen].bounds.size.width / 2, [UIScreen mainScreen].bounds.size.height / 2);
     container.backgroundColor = [UIColor whiteColor];
     container.layer.cornerRadius = 12;
     container.clipsToBounds = YES;
-    [verifyWindow addSubview:container];
 
-    // 3. 标题 Label
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 30, 300, 30)];
+    // 标题
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 20, 300, 30)];
     titleLabel.text = @"温馨提示";
     titleLabel.textAlignment = NSTextAlignmentCenter;
     titleLabel.font = [UIFont boldSystemFontOfSize:18];
     [container addSubview:titleLabel];
 
-    // 4. 提示语 Label
-    UILabel *subLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 60, 300, 20)];
-    subLabel.text = @"请输入激活码";
-    subLabel.textAlignment = NSTextAlignmentCenter;
-    subLabel.font = [UIFont systemFontOfSize:14];
-    subLabel.textColor = [UIColor grayColor];
-    [container addSubview:subLabel];
+    // 副标题
+    UILabel *subTitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 50, 300, 20)];
+    subTitleLabel.text = @"请输入激活码";
+    subTitleLabel.textAlignment = NSTextAlignmentCenter;
+    subTitleLabel.font = [UIFont systemFontOfSize:14];
+    [container addSubview:subTitleLabel];
 
-    // 5. 输入框
-    UITextField *codeField = [[UITextField alloc] initWithFrame:CGRectMake(20, 90, 260, 40)];
-    codeField.borderStyle = UITextBorderStyleRoundedRect;
-    codeField.placeholder = @"请输入激活码";
-    codeField.textAlignment = NSTextAlignmentCenter;
-    codeField.keyboardType = UIKeyboardTypeAlphabet;
-    [container addSubview:codeField];
+    // 输入框
+    UITextField *inputField = [[UITextField alloc] initWithFrame:CGRectMake(20, 80, 260, 40)];
+    inputField.borderStyle = UITextBorderStyleRoundedRect;
+    inputField.placeholder = @"请输入激活码";
+    inputField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    [container addSubview:inputField];
 
-    // 6. 验证按钮
+    // 验证按钮
     UIButton *verifyBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-    verifyBtn.frame = CGRectMake(0, 140, 300, 40); // 占满底部
+    verifyBtn.frame = CGRectMake(20, 130, 260, 40);
     [verifyBtn setTitle:@"验证" forState:UIControlStateNormal];
     verifyBtn.titleLabel.font = [UIFont boldSystemFontOfSize:16];
 
-    // ✅ 修复点：直接使用 Block 处理点击，不再依赖外部函数
-    [verifyBtn addTarget:nil action:@selector(verifyAction:) forControlEvents:UIControlEventTouchUpInside];
-    // 为了让 Block 能工作，我们需要利用 objc_setAssociatedObject 把 Block 存起来，或者直接用简单的 Target-Action 配合静态函数。
-    // 这里为了保持代码简洁且不报错，我们使用一个静态 Helper 函数来桥接。
+    // 点击事件处理
+    __block UIButton *btnRef = verifyBtn;
+    __block UITextField *fieldRef = inputField;
+    [verifyBtn addTarget:nil action:@selector(verifyButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
 
-    // 给按钮打Tag，方便在点击事件中获取输入框的值
-    codeField.tag = 1001;
-    verifyBtn.tag = 1002;
+    // 将引用存入按钮 tag 或关联对象（简化起见，这里用静态变量或全局变量更稳妥）
+    // 为避免复杂，我们直接在 block 里捕获
+    [verifyBtn addTarget:nil action:@selector(verifyButtonTapped:) forControlEvents:UIControlEventTouchUpInside];
+
+    // 由于 target-action 无法直接捕获局部变量，我们改用 Block 方式绑定
+    // 但 UIButton 不支持直接加 Block，所以这里用一个 trick：用 objc_setAssociatedObject
+    objc_setAssociatedObject(verifyBtn, @selector(verifyButtonTapped:), inputField, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
     [container addSubview:verifyBtn];
 
-    // 7. 添加点击事件处理 (使用简单的 Target-Action 模式，最稳定)
-    // 注意：这里我们需要定义一个能被找到的函数。
+    [rootVC.view addSubview:container];
+    [verifyWindow makeKeyAndVisible];
 }
 
-// ✅ 修复点：定义一个静态函数来处理点击，并确保它被调用
-static void verifyBtnClicked(UIButton *sender) {
-    UIWindow *window = sender.window;
-    if (!window) return;
+// 验证按钮点击处理
+%hook UIApplication
+- (void)setDelegate:(id<UIApplicationDelegate>)delegate {
+    %orig;
 
-    // 找到输入框 (通过 Tag 查找)
-    UITextField *field = (UITextField *)[window viewWithTag:1001];
-    NSString *code = field.text;
-
-    if (code.length == 0) {
-        UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"提示" message:@"请输入激活码" delegate:nil cancelButtonTitle:@"确定" otherButtonTitles:nil];
-        [alert show];
-        return;
-    }
-
-    NSLog(@"[VoneVerify] Verifying code: %@", code);
-
-    // 发起网络请求
-    NSString *urlStr = [NSString stringWithFormat:@"%@?code=%@&uuid=%@", SERVER_URL, code, getDeviceUUID()];
-    NSURL *url = [NSURL URLWithString:urlStr];
-    NSURLRequest *request = [NSURLRequest requestWithURL:url];
-
-    [NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        if (error) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"网络错误" message:error.localizedDescription delegate:nil cancelButtonTitle:@"重试" otherButtonTitles:nil];
-                [alert show];
-            });
+    dispatch_once(&onceToken, ^{
+        // 检查是否已验证
+        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+        if ([defaults boolForKey:@"VoneVerify_Passed"]) {
+            isVerified = YES;
             return;
         }
 
-        // 解析 JSON (假设服务器返回 {"success": true} 或类似结构)
-        NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-        BOOL success = [json[@"success"] boolValue]; // 根据你的服务器实际返回值修改判断逻辑
+        // 未验证，显示弹窗
+        showVerifyWindow();
+    });
+}
+%end
 
+// 验证逻辑
+void performVerification(NSString *code) {
+    NSURL *url = [NSURL URLWithString:SERVER_URL];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    request.HTTPMethod = @"POST";
+    request.HTTPBody = [NSString stringWithFormat:@"code=%@&uuid=%@", code, getDeviceUUID()].dataUsingEncoding:NSUTF8StringEncoding;
+
+    [NSURLSession.sharedSession dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (success) {
-                saveVerificationStatus(YES);
-                // 验证成功，销毁窗口
-                verifyWindow.hidden = YES;
+            if (error) {
+                UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"网络错误" message:@"请检查网络连接" delegate:nil cancelButtonTitle:@"确定" otherButtonTitles:nil];
+                [alert show];
+                return;
+            }
+
+            NSString *result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+            if ([result isEqualToString:@"success"]) {
+                isVerified = YES;
+                [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"VoneVerify_Passed"];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+
+                // 隐藏验证窗口
+                [verifyWindow removeFromSuperview];
                 verifyWindow = nil;
-                NSLog(@"[VoneVerify] Verification Success!");
             } else {
-                UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"验证失败" message:@"激活码无效或已过期" delegate:nil cancelButtonTitle:@"重试" otherButtonTitles:nil];
+                UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"验证失败" message:@"激活码无效或已过期" delegate:nil cancelButtonTitle:@"确定" otherButtonTitles:nil];
                 [alert show];
             }
         });
     }] resume];
 }
 
-// 这是一个中间人函数，用来连接 Button 和上面的 verifyBtnClicked
-%hook UIViewController
-- (void)viewDidLoad {
-    %orig;
-    // 我们不 hook viewDidLoad，因为太频繁。我们用下面的 UIApplication hook。
+// 按钮点击回调（通过关联对象获取输入框）
+static void verifyButtonTapped(UIButton *sender) {
+    UITextField *inputField = objc_getAssociatedObject(sender, @selector(verifyButtonTapped:));
+    if (inputField && inputField.text.length > 0) {
+        performVerification(inputField.text);
+    } else {
+        UIAlertView *alert = [[UIAlertView alloc] initWithTitle:@"提示" message:@"请输入激活码" delegate:nil cancelButtonTitle:@"确定" otherButtonTitles:nil];
+        [alert show];
+    }
 }
-%end
-
-// --- 真正的入口：Hook 应用启动 ---
-%hook UIApplication
-
-// 拦截 applicationDidFinishLaunching，这是所有 App 启动的必经之路
-- (void)applicationDidFinishLaunching:(id)arg1 {
-    %orig; // 先让原程序跑起来
-
-    // 使用 dispatch_once 确保只在第一次启动时执行
-    dispatch_once(&onceToken, ^{
-        showVerifyWindow();
-
-        // 手动绑定按钮事件 (因为 showVerifyWindow 里没法直接传 block 给 target)
-        // 我们需要遍历一下刚才创建的 window 找到按钮
-        if (verifyWindow) {
-            for (UIView *subview in verifyWindow.subviews) {
-                if ([subview isKindOfClass:[UIView class]]) { // 那个白色的 container
-                    for (UIView *child in subview.subviews) {
-                        if ([child isKindOfClass:[UIButton class]] && child.tag == 1002) {
-                            // 找到按钮了，绑定我们的静态函数
-                            [(UIButton *)child addTarget:nil action:@selector(verifyBtnClicked:) forControlEvents:UIControlEventTouchUpInside];
-                        }
-                    }
-                }
-            }
-        }
-    });
-}
-
-%end
