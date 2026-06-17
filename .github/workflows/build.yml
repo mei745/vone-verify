@@ -1,4 +1,4 @@
-name: Build Tweak (MacOS Native)
+name: Build Tweak (MacOS + iOS 16.2 SDK)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    # ✅ 核心：继续使用 macos-latest，利用系统自带编译器，避开工具链下载问题
+    # ✅ 核心：继续使用 macos-latest，利用系统自带编译器，彻底避开工具链下载问题
     runs-on: macos-latest
 
     steps:
@@ -18,33 +18,37 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          brew install dpkg ldid wget || brew install dpkg ldid wget
+          brew install dpkg ldid wget || true
 
-      - name: Setup Theos & Environment
+      - name: Setup Theos & iOS 16.2 SDK
         run: |
           THEOS_PATH="$HOME/theos"
           echo "THEOS=$THEOS_PATH" >> $GITHUB_ENV
           echo "$THEOS_PATH/bin" >> $GITHUB_PATH
 
-          # 克隆 Theos
+          # 1. 克隆 Theos 核心
           git clone --recursive --depth=1 https://github.com/theos/theos.git $THEOS_PATH
 
-          # 下载 SDK (注意：这里依然使用你之前的源，如果这个源失效，见方案二)
-          # 但为了支持 iOS 26/27，建议手动指定一个较新的 SDK 链接，或者保留原样碰碰运气
+          # 2. 下载指定的 iOS 16.2 SDK
+          # 使用 Theos 官方提供的标准 SDK 镜像，稳定可靠
+          echo "📦 Downloading iPhoneOS16.2.sdk..."
           mkdir -p $THEOS_PATH/sdks
-          wget -qO- https://github.com/theos/sdks/archive/master.zip | bsdtar -xvf- -C $THEOS_PATH/sdks --strip-components=1
+          wget -qO- https://github.com/theos/sdks/releases/download/v1/iPhoneOS16.2.sdk.tar.xz | tar -xJf- -C $THEOS_PATH/sdks
+
+          # 3. 确认 SDK 已就位
+          ls -la $THEOS_PATH/sdks
 
       - name: Build Tweak
         run: |
-          # ✅ 关键：在这里强制指定最低版本为 15.0
-          # 这样即使是用 Mac 自带编译器，也会加上 -miphoneos-version-min=15.0 参数
-          export TARGET="iphone:clang:latest:15.0"
-
+          # ✅ 关键：强制指定 SDK 版本为 16.2
+          # 即使本地有多个 SDK，这里也会精准命中 16.2
           make clean
-          make package FINALPACKAGE=1
+          make package "SDKVERSION=16.2" TARGET="iphone:clang:latest:15.0"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: iOS-Tweak-Package
-          path: packages/*.deb
+          path: |
+            packages/*.deb
+            *.deb
