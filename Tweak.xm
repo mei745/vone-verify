@@ -86,7 +86,7 @@ NSString* getDeviceUUID() {
         _statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
         [card addSubview:_statusLabel];
 
-        // 【核心修改】使用标准 NSLayoutConstraint 写法，避开 Theos 预处理器的语法解析陷阱
+        // 布局约束 (已修复为传统写法，兼容 Theos)
         [NSLayoutConstraint activateConstraints:@[
             [NSLayoutConstraint constraintWithItem:card attribute:NSLayoutAttributeCenterX relatedBy:NSLayoutRelationEqual toItem:self attribute:NSLayoutAttributeCenterX multiplier:1.0 constant:0],
             [NSLayoutConstraint constraintWithItem:card attribute:NSLayoutAttributeCenterY relatedBy:NSLayoutRelationEqual toItem:self attribute:NSLayoutAttributeCenterY multiplier:1.0 constant:0],
@@ -138,7 +138,7 @@ NSString* getDeviceUUID() {
     self.verifyBtn.alpha = 0.5;
     [self.verifyBtn setTitle:@"验证中..." forState:UIControlStateNormal];
 
-    // 【核心修改】使用 NSURLSession 替代已废弃的 sendSynchronousRequest
+    // 【关键修改】使用 NSURLSession + 信号量 模拟同步请求，避免 Block 作用域报错
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSString *deviceID = getDeviceUUID();
         NSString *urlString = [NSString stringWithFormat:@"%@?code=%@&uuid=%@", SERVER_URL, code, deviceID];
@@ -148,34 +148,42 @@ NSString* getDeviceUUID() {
         [request setTimeoutInterval:15.0];
         [request setValue:@"VoneVerify/1.0" forHTTPHeaderField:@"User-Agent"];
 
-        NSError *error = nil;
-        NSData *data = nil;
+        NSError *taskError = nil;
+        NSData *responseData = nil;
 
-        // 使用同步方式的 Session 任务以适配原有逻辑结构
-        NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *responseData, NSURLResponse *response, NSError *taskError) {
-            data = responseData;
-            error = taskError;
+        // 创建信号量，初始值为 0 (阻塞状态)
+        dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
+
+        NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            responseData = data;
+            taskError = error;
+            // 任务完成，发送信号，解除阻塞
+            dispatch_semaphore_signal(semaphore);
         }];
-        [task waitUntilFinished];
+        [task resume];
 
+        // 等待信号量，最多等 20 秒 (防止死锁)
+        dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20.0 * NSEC_PER_SEC)));
+
+        // 回到主线程处理结果
         dispatch_async(dispatch_get_main_queue(), ^{
             // 恢复 UI
             self.verifyBtn.enabled = YES;
             self.verifyBtn.alpha = 1.0;
             [self.verifyBtn setTitle:@"验证" forState:UIControlStateNormal];
 
-            if (error) {
-                NSLog(@"[VoneVerify] 网络请求失败: %@", error.localizedDescription);
+            if (taskError) {
+                NSLog(@"[VoneVerify] 网络请求失败: %@", taskError.localizedDescription);
                 [self showError:@"网络连接超时或失败"];
                 return;
             }
 
-            if (!data) {
+            if (!responseData) {
                 [self showError:@"服务器无响应"];
                 return;
             }
 
-            NSString *result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+            NSString *result = [[NSString alloc] initWithData:responseData encoding:NSUTF8StringEncoding];
             NSLog(@"[VoneVerify] 服务器返回: %@", result);
 
             NSString *cleanResult = [result stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
