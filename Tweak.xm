@@ -86,39 +86,39 @@ NSString* getDeviceUUID() {
         _statusLabel.translatesAutoresizingMaskIntoConstraints = NO;
         [card addSubview:_statusLabel];
 
-        // 布局约束 (已修复为传统写法，兼容 Theos)
+        // 布局约束 (已修复 Theos 兼容性问题)
         [NSLayoutConstraint activateConstraints:@[
-            [NSLayoutConstraint constraintWithItem:card attribute:NSLayoutAttributeCenterX relatedBy:NSLayoutRelationEqual toItem:self attribute:NSLayoutAttributeCenterX multiplier:1.0 constant:0],
-            [NSLayoutConstraint constraintWithItem:card attribute:NSLayoutAttributeCenterY relatedBy:NSLayoutRelationEqual toItem:self attribute:NSLayoutAttributeCenterY multiplier:1.0 constant:0],
-            [NSLayoutConstraint constraintWithItem:card attribute:NSLayoutAttributeWidth relatedBy:NSLayoutRelationEqual toItem:nil attribute:NSLayoutAttributeNotAnAttribute multiplier:1.0 constant:270],
+            [card centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
+            [card centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+            [card widthAnchor constraintEqualToConstant:270],
 
-            [NSLayoutConstraint constraintWithItem:titleLabel attribute:NSLayoutAttributeTop relatedBy:NSLayoutRelationEqual toItem:card attribute:NSLayoutAttributeTop multiplier:1.0 constant:20],
-            [NSLayoutConstraint constraintWithItem:titleLabel attribute:NSLayoutAttributeLeading relatedBy:NSLayoutRelationEqual toItem:card attribute:NSLayoutAttributeLeading multiplier:1.0 constant:0],
-            [NSLayoutConstraint constraintWithItem:titleLabel attribute:NSLayoutAttributeTrailing relatedBy:NSLayoutRelationEqual toItem:card attribute:NSLayoutAttributeTrailing multiplier:1.0 constant:0],
+            [titleLabel.topAnchor constraintEqualToAnchor:card.topAnchor constant:20],
+            [titleLabel.leadingAnchor constraintEqualToAnchor:card.leadingAnchor],
+            [titleLabel.trailingAnchor constraintEqualToAnchor:card.trailingAnchor],
 
-            [NSLayoutConstraint constraintWithItem:subLabel attribute:NSLayoutAttributeTop relatedBy:NSLayoutRelationEqual toItem:titleLabel attribute:NSLayoutAttributeBottom multiplier:1.0 constant:8],
-            [NSLayoutConstraint constraintWithItem:subLabel attribute:NSLayoutAttributeLeading relatedBy:NSLayoutRelationEqual toItem:card attribute:NSLayoutAttributeLeading multiplier:1.0 constant:0],
-            [NSLayoutConstraint constraintWithItem:subLabel attribute:NSLayoutAttributeTrailing relatedBy:NSLayoutRelationEqual toItem:card attribute:NSLayoutAttributeTrailing multiplier:1.0 constant:0],
+            [subLabel.topAnchor constraintEqualToAnchor:titleLabel.bottomAnchor constant:8],
+            [subLabel.leadingAnchor constraintEqualToAnchor:card.leadingAnchor],
+            [subLabel.trailingAnchor constraintEqualToAnchor:card.trailingAnchor],
 
-            [NSLayoutConstraint constraintWithItem:_inputField attribute:NSLayoutAttributeTop relatedBy:NSLayoutRelationEqual toItem:subLabel attribute:NSLayoutAttributeBottom multiplier:1.0 constant:15],
-            [NSLayoutConstraint constraintWithItem:_inputField attribute:NSLayoutAttributeLeading relatedBy:NSLayoutRelationEqual toItem:card attribute:NSLayoutAttributeLeading multiplier:1.0 constant:15],
-            [NSLayoutConstraint constraintWithItem:_inputField attribute:NSLayoutAttributeTrailing relatedBy:NSLayoutRelationEqual toItem:card attribute:NSLayoutAttributeTrailing multiplier:1.0 constant:-15],
-            [NSLayoutConstraint constraintWithItem:_inputField attribute:NSLayoutAttributeHeight relatedBy:NSLayoutRelationEqual toItem:nil attribute:NSLayoutAttributeNotAnAttribute multiplier:1.0 constant:36],
+            [_inputField.topAnchor constraintEqualToAnchor:subLabel.bottomAnchor constant:15],
+            [_inputField.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:15],
+            [_inputField.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-15],
+            [_inputField.heightAnchor constraintEqualToConstant:36],
 
-            [NSLayoutConstraint constraintWithItem:line attribute:NSLayoutAttributeTop relatedBy:NSLayoutRelationEqual toItem:_inputField attribute:NSLayoutAttributeBottom multiplier:1.0 constant:15],
-            [NSLayoutConstraint constraintWithItem:line attribute:NSLayoutAttributeLeading relatedBy:NSLayoutRelationEqual toItem:card attribute:NSLayoutAttributeLeading multiplier:1.0 constant:0],
-            [NSLayoutConstraint constraintWithItem:line attribute:NSLayoutAttributeTrailing relatedBy:NSLayoutRelationEqual toItem:card attribute:NSLayoutAttributeTrailing multiplier:1.0 constant:0],
-            [NSLayoutConstraint constraintWithItem:line attribute:NSLayoutAttributeHeight relatedBy:NSLayoutRelationEqual toItem:nil attribute:NSLayoutAttributeNotAnAttribute multiplier:1.0 constant:0.5],
+            [line.topAnchor constraintEqualToAnchor:_inputField.bottomAnchor constant:15],
+            [line.leadingAnchor constraintEqualToAnchor:card.leadingAnchor],
+            [line.trailingAnchor constraintEqualToAnchor:card.trailingAnchor],
+            [line.heightAnchor constraintEqualToConstant:0.5],
 
-            [NSLayoutConstraint constraintWithItem:_verifyBtn attribute:NSLayoutAttributeTop relatedBy:NSLayoutRelationEqual toItem:line attribute:NSLayoutAttributeBottom multiplier:1.0 constant:0],
-            [NSLayoutConstraint constraintWithItem:_verifyBtn attribute:NSLayoutAttributeLeading relatedBy:NSLayoutRelationEqual toItem:card attribute:NSLayoutAttributeLeading multiplier:1.0 constant:0],
-            [NSLayoutConstraint constraintWithItem:_verifyBtn attribute:NSLayoutAttributeTrailing relatedBy:NSLayoutRelationEqual toItem:card attribute:NSLayoutAttributeTrailing multiplier:1.0 constant:0],
-            [NSLayoutConstraint constraintWithItem:_verifyBtn attribute:NSLayoutAttributeHeight relatedBy:NSLayoutRelationEqual toItem:nil attribute:NSLayoutAttributeNotAnAttribute multiplier:1.0 constant:44],
-            [NSLayoutConstraint constraintWithItem:_verifyBtn attribute:NSLayoutAttributeBottom relatedBy:NSLayoutRelationEqual toItem:card attribute:NSLayoutAttributeBottom multiplier:1.0 constant:0],
+            [_verifyBtn.topAnchor constraintEqualToAnchor:line.bottomAnchor],
+            [_verifyBtn.leadingAnchor constraintEqualToAnchor:card.leadingAnchor],
+            [_verifyBtn.trailingAnchor constraintEqualToAnchor:card.trailingAnchor],
+            [_verifyBtn.heightAnchor constraintEqualToConstant:44],
+            [_verifyBtn.bottomAnchor constraintEqualToAnchor:card.bottomAnchor],
 
-            [NSLayoutConstraint constraintWithItem:_statusLabel attribute:NSLayoutAttributeTop relatedBy:NSLayoutRelationEqual toItem:_inputField attribute:NSLayoutAttributeBottom multiplier:1.0 constant:5],
-            [NSLayoutConstraint constraintWithItem:_statusLabel attribute:NSLayoutAttributeLeading relatedBy:NSLayoutRelationEqual toItem:card attribute:NSLayoutAttributeLeading multiplier:1.0 constant:15],
-            [NSLayoutConstraint constraintWithItem:_statusLabel attribute:NSLayoutAttributeTrailing relatedBy:NSLayoutRelationEqual toItem:card attribute:NSLayoutAttributeTrailing multiplier:1.0 constant:-15],
+            [_statusLabel.topAnchor constraintEqualToAnchor:_inputField.bottomAnchor constant:5],
+            [_statusLabel.leadingAnchor constraintEqualToAnchor:card.leadingAnchor constant:15],
+            [_statusLabel.trailingAnchor constraintEqualToAnchor:card.trailingAnchor constant:-15],
         ]];
     }
     return self;
@@ -138,7 +138,7 @@ NSString* getDeviceUUID() {
     self.verifyBtn.alpha = 0.5;
     [self.verifyBtn setTitle:@"验证中..." forState:UIControlStateNormal];
 
-    // 【关键修改】使用 NSURLSession + 信号量 模拟同步请求，避免 Block 作用域报错
+    // 【关键修改】使用 NSURLSession + 信号量 实现伪同步请求
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         NSString *deviceID = getDeviceUUID();
         NSString *urlString = [NSString stringWithFormat:@"%@?code=%@&uuid=%@", SERVER_URL, code, deviceID];
@@ -148,21 +148,21 @@ NSString* getDeviceUUID() {
         [request setTimeoutInterval:15.0];
         [request setValue:@"VoneVerify/1.0" forHTTPHeaderField:@"User-Agent"];
 
-        NSError *taskError = nil;
-        NSData *responseData = nil;
-
-        // 创建信号量，初始值为 0 (阻塞状态)
+        // 定义信号量
         dispatch_semaphore_t semaphore = dispatch_semaphore_create(0);
 
-        NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        // 必须加 __block 才能在这个 block 内部修改它们
+        __block NSData *responseData = nil;
+        __block NSError *taskError = nil;
+
+        [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
             responseData = data;
             taskError = error;
-            // 任务完成，发送信号，解除阻塞
+            // 任务完成，释放信号量，让下面的 wait 继续执行
             dispatch_semaphore_signal(semaphore);
-        }];
-        [task resume];
+        }] resume];
 
-        // 等待信号量，最多等 20 秒 (防止死锁)
+        // 等待网络请求完成 (最多等 20 秒)
         dispatch_semaphore_wait(semaphore, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(20.0 * NSEC_PER_SEC)));
 
         // 回到主线程处理结果
