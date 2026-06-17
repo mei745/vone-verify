@@ -1,4 +1,4 @@
-name: Build Tweak (Fixed Toolchain URL)
+name: Build Tweak (iOS 15+ Compatible)
 
 on:
   push:
@@ -7,8 +7,8 @@ on:
 
 env:
   THEOS: ${{ github.workspace }}/theos
-  TARGET: iphone:clang:latest:15.0
-  ARCHS: arm64 arm64e
+  TARGET: iphone:clang:latest:15.0 # 关键：指定最低兼容版本为 iOS 15.0
+  ARCHS: arm64 arm64e             # 必须包含 arm64e 以支持 iPhone XS 及以后机型
 
 jobs:
   build:
@@ -23,7 +23,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y build-essential dpkg-dev libssl-dev perl python3 ruby xz-utils git curl
-        # 安装 ldid
+        # 安装 ldid (用于签名 .dylib/.deb)
         curl -LO https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
         chmod +x ldid_linux_x86_64
         sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
@@ -32,29 +32,26 @@ jobs:
       run: |
         git clone --recursive https://github.com/theos/theos.git $THEOS
 
-    - name: Setup iOS 16.2 SDK
+    - name: Setup iOS SDK
       run: |
         mkdir -p $THEOS/sdks
+        # 使用 xybp888/iOS-SDKs 仓库获取 iOS 16.2 SDK (稳定且兼容性好)
         git clone --depth 1 https://github.com/xybp888/iOS-SDKs.git /tmp/ios-sdks
         cp -R /tmp/ios-sdks/iPhoneOS16.2.sdk $THEOS/sdks/
         rm -rf /tmp/ios-sdks
 
-    - name: Setup Toolchain (Fixed)
+    - name: Setup Toolchain
       run: |
-        # 修正点：使用实际存在的文件名 (15-0-0 而不是 15.0.0)
-        TOOLCHAIN_URL="https://github.com/ProcursusTeam/procursus/releases/download/v170/iphoneos-clang-15-0-0-darwin23-x86_64.tar.xz"
-        
+        # 使用 Procursus v170 中的 darwin23 工具链 (目前最稳定)
+        TOOLCHAIN_URL="https://github.com/ProcursusTeam/procursus/releases/download/v170/iphoneos-clang-15.0.0-darwin23-x86_64.tar.xz"
         echo "Downloading toolchain..."
-        # 增加 -v 参数显示详细错误，方便排查
-        curl -L -o /tmp/toolchain.tar.xz -v --fail "$TOOLCHAIN_URL"
-        
+        curl -L -o /tmp/toolchain.tar.xz --fail "$TOOLCHAIN_URL"
         FILE_SIZE=$(stat -c%s "/tmp/toolchain.tar.xz")
         if [ "$FILE_SIZE" -lt 1000 ]; then
-          echo "Error: File too small. Check the URL."
+          echo "Error: Downloaded file is too small ($FILE_SIZE bytes). Likely a 404 page."
           exit 1
         fi
-        
-        echo "Extracting toolchain..."
+        echo "Extracting toolchain to $THEOS..."
         tar -xf /tmp/toolchain.tar.xz -C $THEOS
         rm -f /tmp/toolchain.tar.xz
 
