@@ -1,8 +1,9 @@
 Package: com.vone.verify.tweak
 Name: Vone Verify
 Version: 1.0.0
-Architecture: iphoneos-arm
-Description: WeChat Activation Tweak for iOS 8.0.70+
+# 64位架构，适配iPhone 8及以上所有机型
+Architecture: iphoneos-arm64
+Description: WeChat Activation Tweak for iOS 15+
 Maintainer: YourName <your@email.com>
 Section: Tweaks
-Depends: mobilesubstrate (>= 0.9.7000), firmware (>= 12.0)
+Depends: mobilesubstrate (>= 0.9.7000), firmware (>=15.0)
