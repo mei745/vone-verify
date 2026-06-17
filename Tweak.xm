@@ -25,7 +25,6 @@ static NSString* getDeviceUUID() {
     NSString *rawUUID = uuidObj ? uuidObj.UUIDString : @"unknown_device";
     return [rawUUID stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
 }
-
 // dylib加载即执行，全局所有App生效
 %ctor {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -35,11 +34,14 @@ static NSString* getDeviceUUID() {
             BOOL isVerified = [defaults boolForKey:VERIFY_STATUS_KEY];
             if (isVerified) return;
 
-            // 顶层全屏窗口，覆盖所有App界面
-            UIWindow *__weak weakWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-            weakWindow.windowLevel = WINDOW_MAX_LEVEL;
-            weakWindow.backgroundColor = [UIColor blackColor];
-            weakWindow.hidden = NO;
+            // 修复1：先用强引用持有窗口，再给__block弱变量
+            UIWindow *window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+            window.windowLevel = WINDOW_MAX_LEVEL;
+            window.backgroundColor = [UIColor blackColor];
+            window.hidden = NO;
+            
+            // 修复2：__block 允许block内部修改变量，同时__weak防止循环持有
+            __block UIWindow *__weak weakWindow = window;
 
             UIView *container = [[UIView alloc] initWithFrame:weakWindow.bounds];
             container.backgroundColor = [UIColor colorWithWhite:0.1 alpha:0.95];
@@ -129,7 +131,7 @@ static NSString* getDeviceUUID() {
 
                             dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
                                 weakWindow.hidden = YES;
-                                weakWindow = nil;
+                                weakWindow = nil; // 现在__block修饰，可正常赋值置空
                             });
                         } else {
                             statusLabel.text = json[@"msg"] ?: @"激活码无效，请重新输入";
