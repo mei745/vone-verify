@@ -1,6 +1,6 @@
 THEOS_PACKAGE_NAME = com.vone.verify
 ARCHS = arm64 arm64e
-TARGET = iphone:clang:16.2:15.0
+TARGET = iphone:clang:latest:15.0
 ADDITIONAL_CFLAGS = -Wno-deprecated-declarations -fobjc-arc
 
 include $(THEOS)/makefiles/common.mk
