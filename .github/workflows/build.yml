@@ -1,15 +1,16 @@
-name: Build Tweak (iOS 16.2 SDK)
+name: Build Tweak (iOS 16.2 SDK + Toolchain)
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
 
-# 【修改点 1】在这里定义全局环境变量，确保所有步骤都能读取到 THEOS 路径
+# 【关键】定义全局环境变量
 env:
-  THEOS: ${{ github.workspace }}/theos # 使用绝对路径更稳妥
-  TARGET: iphone:clang:latest:15.0     # 保持你的兼容性目标
-  ARCHS: arm64 arm64e                  # 建议明确架构
+  THEOS: ${{ github.workspace }}/theos
+  # 使用 iPhoneOS16.2.sdk，最低兼容版本设为 15.0
+  TARGET: iphone:clang:latest:15.0
+  ARCHS: arm64 arm64e
 
 jobs:
   build:
@@ -20,54 +21,67 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Install Dependencies & Tools
+    # 1. 安装基础依赖
+    - name: Install Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y git curl rsync zip unzip libssl-dev libcurl4-openssl-dev clang make dpkg-dev
-        
-        # 安装 ldid (Procursus Team 维护版)
-        curl -LO https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_aarch64
-        chmod +x ldid_linux_aarch64
-        sudo mv ldid_linux_aarch64 /usr/local/bin/ldid
+        sudo apt-get install -y git curl rsync zip unzip libssl-dev libcurl4-openssl-dev clang make dpkg-dev ldid
 
-    - name: Setup Theos & iOS 16.2 SDK
+    # 2. 克隆 Theos 框架
+    - name: Setup Theos
       run: |
-        # 克隆 Theos
         git clone --recursive https://github.com/theos/theos.git $THEOS
 
-        # 创建 SDK 目录
+    # 3. 【核心修复】下载并配置 Linux 专用 Toolchain
+    # Theos 默认不带编译器，必须手动下载 Procursus Toolchain
+    - name: Setup Toolchain
+      run: |
+        TOOLCHAIN_DIR="$THEOS/toolchain/linux/iphone"
+        mkdir -p "$TOOLCHAIN_DIR"
+
+        # 下载最新的 Linux x86_64 Toolchain (Procursus)
+        # 注意：这个链接可能会随时间更新，如果失效请去 https://github.com/ProcursusTeam/Procursus 查找最新 release
+        echo "Downloading toolchain..."
+        curl -L -o toolchain.tar.xz https://github.com/ProcursusTeam/Procursus/releases/download/v170/linux-x86_64-ios-llvm-14.0.0+5.tar.xz
+
+        # 解压到指定目录
+        tar -xf toolchain.tar.xz -C "$TOOLCHAIN_DIR" --strip-components=1
+
+        # 验证 clang 是否存在
+        ls -la "$TOOLCHAIN_DIR/bin/clang"
+
+    # 4. 下载 iOS 16.2 SDK
+    - name: Setup iOS 16.2 SDK
+      run: |
         mkdir -p $THEOS/sdks
 
-        # 使用 Git Sparse Checkout 只下载 iPhoneOS16.2.sdk
-        # 注意：这里使用的是 xybp888 的仓库，因为它包含较新的 SDK
-        git clone --filter=blob:none --sparse https://github.com/xybp888/iOS-SDKs.git /tmp/ios-sdks
-        cd /tmp/ios-sdks
-        git sparse-checkout set iPhoneOS16.2.sdk
-        git checkout master
-        cp -r iPhoneOS16.2.sdk $THEOS/sdks/
+        # 使用 sparse checkout 仅拉取 iPhoneOS16.2.sdk
+        git init temp_sdk
+        cd temp_sdk
+        git remote add origin https://github.com/xybp888/iOS-SDKs.git
+        git config core.sparseCheckout true
+        echo "iPhoneOS16.2.sdk" >> .git/info/sparse-checkout
+        git pull --depth 1 origin master
 
-        # 验证 SDK 是否存在
-        ls $THEOS/sdks/iPhoneOS16.2.sdk/usr/include
+        # 移动 SDK 到 Theos 目录
+        mv iPhoneOS16.2.sdk $THEOS/sdks/
+        cd ..
+        rm -rf temp_sdk
 
+    # 5. 编译项目
     - name: Build Tweak
       run: |
-        # 【修改点 2】打印环境变量进行调试
+        # 打印环境信息用于调试
         echo "Current Directory: $(pwd)"
         echo "THEOS Path: $THEOS"
         echo "Target: $TARGET"
+        echo "Clang Path: $THEOS/toolchain/linux/iphone/bin/clang"
 
-        # 检查 tweak.mk 是否存在 (这是报错的关键文件)
-        if [ ! -f "$THEOS/makefiles/tweak.mk" ]; then
-          echo "Error: tweak.mk not found in $THEOS/makefiles/"
-          exit 1
-        fi
+        # 执行编译
+        make package FINALPACKAGE=1
 
-        # 【修改点 3】显式传递 THEOS 变量给 make 命令
-        # 即使全局变量失效，这样写也能保证编译成功
-        make package FINALPACKAGE=1 THEOS=$THEOS TARGET=$TARGET ARCHS="$ARCHS"
-
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
+    # 6. 上传产物
+    - uses: actions/upload-artifact@v4
       with:
-        name: Tweak-Package
+        name: VoneVerify-Package
         path: packages/*.deb
