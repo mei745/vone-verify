@@ -5,67 +5,69 @@ on:
     branches: [ main, master ]
   workflow_dispatch:
 
+# 【修改点 1】在这里定义全局环境变量，确保所有步骤都能读取到 THEOS 路径
+env:
+  THEOS: ${{ github.workspace }}/theos # 使用绝对路径更稳妥
+  TARGET: iphone:clang:latest:15.0     # 保持你的兼容性目标
+  ARCHS: arm64 arm64e                  # 建议明确架构
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. 检出代码
     - uses: actions/checkout@v4
       with:
-        submodules: recursive # 必须开启递归克隆，否则 Theos 不完整
+        submodules: recursive
 
-    # 2. 安装依赖（已修复 ldid 报错）
     - name: Install Dependencies & Tools
       run: |
         sudo apt-get update
-        sudo apt-get install -y git curl rsync zip unzip libssl-dev libcurl4-openssl-dev clang make
+        sudo apt-get install -y git curl rsync zip unzip libssl-dev libcurl4-openssl-dev clang make dpkg-dev
         
-        # 手动安装 ldid (Procursus Team 维护版)
+        # 安装 ldid (Procursus Team 维护版)
         curl -LO https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_aarch64
         chmod +x ldid_linux_aarch64
         sudo mv ldid_linux_aarch64 /usr/local/bin/ldid
-        
-        # 安装 dpkg-deb (用于打包 deb)
-        sudo apt-get install -y dpkg-dev
 
-    # 3. 配置 Theos 和 iOS 16.2 SDK
     - name: Setup Theos & iOS 16.2 SDK
       run: |
         # 克隆 Theos
-        git clone --recursive https://github.com/theos/theos.git $HOME/theos
-        
+        git clone --recursive https://github.com/theos/theos.git $THEOS
+
         # 创建 SDK 目录
-        mkdir -p $HOME/theos/sdks
-        
-        # 使用 Git Sparse Checkout 仅拉取 iPhoneOS16.2.sdk
-        # 这比直接下载整个仓库快得多，且避免链接失效问题
-        git init /tmp/sdk && cd /tmp/sdk
-        git remote add origin https://github.com/xybp888/iOS-SDKs.git
-        git config core.sparseCheckout true
-        echo "iPhoneOS16.2.sdk/" >> .git/info/sparse-checkout
-        git pull origin master
-        
-        # 移动 SDK 到 Theos 目录
-        mv /tmp/sdk/iPhoneOS16.2.sdk $HOME/theos/sdks/
-        
-        # 清理临时文件
-        rm -rf /tmp/sdk
+        mkdir -p $THEOS/sdks
 
-    # 4. 编译 Tweak
+        # 使用 Git Sparse Checkout 只下载 iPhoneOS16.2.sdk
+        # 注意：这里使用的是 xybp888 的仓库，因为它包含较新的 SDK
+        git clone --filter=blob:none --sparse https://github.com/xybp888/iOS-SDKs.git /tmp/ios-sdks
+        cd /tmp/ios-sdks
+        git sparse-checkout set iPhoneOS16.2.sdk
+        git checkout master
+        cp -r iPhoneOS16.2.sdk $THEOS/sdks/
+
+        # 验证 SDK 是否存在
+        ls $THEOS/sdks/iPhoneOS16.2.sdk/usr/include
+
     - name: Build Tweak
-      env:
-        THEOS: $HOME/theos
-        # 关键：指定使用 iOS 16.2 SDK，但最低兼容版本设为 15.0
-        TARGET: iphone:clang:latest:15.0
-        SDKVERSION: 16.2
       run: |
-        cd $GITHUB_WORKSPACE
-        make package FINALPACKAGE=1
+        # 【修改点 2】打印环境变量进行调试
+        echo "Current Directory: $(pwd)"
+        echo "THEOS Path: $THEOS"
+        echo "Target: $TARGET"
 
-    # 5. 上传产物
+        # 检查 tweak.mk 是否存在 (这是报错的关键文件)
+        if [ ! -f "$THEOS/makefiles/tweak.mk" ]; then
+          echo "Error: tweak.mk not found in $THEOS/makefiles/"
+          exit 1
+        fi
+
+        # 【修改点 3】显式传递 THEOS 变量给 make 命令
+        # 即使全局变量失效，这样写也能保证编译成功
+        make package FINALPACKAGE=1 THEOS=$THEOS TARGET=$TARGET ARCHS="$ARCHS"
+
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: Tweak-Package-iOS16.2
+        name: Tweak-Package
         path: packages/*.deb
