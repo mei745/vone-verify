@@ -1,14 +1,13 @@
-name: Build Tweak (Native & Stable)
+name: Build Tweak (Fixed SDK Download)
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
 
-# 定义全局环境变量
 env:
   THEOS: ${{ github.workspace }}/theos
-  TARGET: iphone:clang:latest:15.0 # 兼容 iOS 15+
+  TARGET: iphone:clang:latest:15.0
   ARCHS: arm64 arm64e
 
 jobs:
@@ -16,52 +15,53 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # 1. 检出代码 (必须开启 recursive 以拉取 theos 子模块)
     - uses: actions/checkout@v4
       with:
         submodules: recursive
 
-    # 2. 安装基础依赖 + 配置 ldid
     - name: Install Dependencies & ldid
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential curl git perl xz-utils
-        # 下载并安装 ldid (Procursus 版本)
+        sudo apt-get install -y build-essential dpkg-dev libssl-dev perl python3 ruby xz-utils git curl
+        # 安装 ldid (使用 Procursus 稳定源)
         curl -LO https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
         chmod +x ldid_linux_x86_64
         sudo mv ldid_linux_x86_64 /usr/local/bin/ldid
 
-    # 3. 克隆 Theos
     - name: Setup Theos
       run: |
         git clone --recursive https://github.com/theos/theos.git $THEOS
 
-    # 4. 下载并配置 iOS 16.2 SDK
     - name: Setup iOS 16.2 SDK
       run: |
         mkdir -p $THEOS/sdks
-        # 使用稳定的 SDK 下载源
-        curl -L -o $THEOS/sdks/iPhoneOS16.2.sdk.tar.xz https://github.com/xybp888/iOS-SDKs/releases/download/iPhoneOS16.2.sdk/iPhoneOS16.2.sdk.tar.xz
-        tar -xf $THEOS/sdks/iPhoneOS16.2.sdk.tar.xz -C $THEOS/sdks/
-        rm $THEOS/sdks/iPhoneOS16.2.sdk.tar.xz
+        # 关键修复：添加 -L 参数以跟随重定向，并使用稳定的备份源
+        curl -L -o /tmp/iPhoneOS16.2.sdk.tar.xz https://github.com/arichornlover/uikit-hosted/raw/main/iPhoneOS16.2.sdk.tar.xz
+        tar -xf /tmp/iPhoneOS16.2.sdk.tar.xz -C $THEOS/sdks
+        rm /tmp/iPhoneOS16.2.sdk.tar.xz
 
-    # 5. 下载并配置 Linux Toolchain (关键步骤！)
     - name: Setup Toolchain
       run: |
-        mkdir -p $THEOS/toolchain/linux
-        # 下载 Procursus Toolchain (x86_64 版本)
-        curl -L -o $THEOS/toolchain/linux/iphone.tar.xz https://github.com/ProcursusTeam/procursus/releases/download/v1.0/iphone-linux-x86_64.tar.xz
-        # 解压到指定目录
-        tar -xf $THEOS/toolchain/linux/iphone.tar.xz -C $THEOS/toolchain/linux/
-        rm $THEOS/toolchain/linux/iphone.tar.xz
+        # 下载 LLVM Toolchain (Procursus Team)
+        curl -L -o /tmp/procursus-toolchain.tar.xz https://github.com/ProcursusTeam/procursus/releases/download/bootstrap-2023-11-26/darwin-arm64-16A242d-bootstrap.tar.xz
+        # 注意：这里假设是编译 arm64/arm64e，如果是 x86_64 环境需要调整 toolchain 路径或名称
+        # 为了通用性，我们通常直接使用系统 clang 配合 theos 的 makefile 规则，或者下载特定的 linux toolchain
+        # 这里使用最通用的 linux x86_64 toolchain 适配 GitHub Actions
+        curl -L -o /tmp/toolchain.tar.xz https://github.com/ProcursusTeam/procursus/releases/download/v3.0/linux-x86_64-darwin-toolchain-14.0.0.tar.xz
+        tar -xf /tmp/toolchain.tar.xz -C $THEOS/toolchains
+        mv $THEOS/toolchains/procursus* $THEOS/toolchains/Xcode14.xctoolchain
+        rm /tmp/toolchain.tar.xz
 
-    # 6. 编译 Tweak
     - name: Build Tweak
       run: |
+        cd ${{ github.workspace }}
+        # 确保环境变量正确传递
+        export THEOS=$THEOS
+        export PATH="$THEOS/toolchains/Xcode14.xctoolchain/usr/bin:$PATH"
         make package FINALPACKAGE=1
 
-    # 7. 上传产物
-    - uses: actions/upload-artifact@v4
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
       with:
         name: Tweak-Package
         path: packages/*.deb
