@@ -6,154 +6,138 @@
 #define SERVER_URL @"https://vonekeji.cn/verify.php" // 你的验证接口
 #define PLUGIN_NAME @"VoneVerify"
 
-// --- 全局变量 ---
-static BOOL isVerified = NO;
-static UIWindow *verifyWindow = nil;
-static dispatch_once_t onceToken;
-
 // 获取设备唯一标识 (UUID)
 NSString* getDeviceUUID() {
     return [[UIDevice currentDevice] identifierForVendor].UUIDString;
 }
 
-// 检查是否已验证 (利用 NSUserDefaults 持久化)
-BOOL checkVerificationStatus() {
-    return [[NSUserDefaults standardUserDefaults] boolForKey:@"vone_verified_status"];
-}
-
-void saveVerificationStatus(BOOL status) {
-    [[NSUserDefaults standardUserDefaults] setBool:status forKey:@"vone_verified_status"];
-    [[NSUserDefaults standardUserDefaults] synchronize];
-}
-
-// --- 核心 UI 构建与验证逻辑 ---
 %hook UIApplication
 
+// Hook setDelegate: 这是 App 启动时必然调用的方法，比 didFinishLaunching 更稳
 - (void)setDelegate:(id<UIApplicationDelegate>)delegate {
     %orig;
 
-    // 如果已经验证过，直接跳过，不再弹窗
-    if (checkVerificationStatus()) {
-        return;
-    }
-
+    // 使用 dispatch_once 确保整个 App 生命周期只执行一次弹窗逻辑
+    static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        // 创建一个独立的 Window，层级设为最高，确保覆盖所有界面
-        verifyWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-        verifyWindow.windowLevel = CGFLOAT_MAX;
-        verifyWindow.backgroundColor = [UIColor colorWithRed:0 green:0 blue:0 alpha:0.85]; // 半透明黑色背景
-        verifyWindow.hidden = NO;
 
-        // 创建主容器视图
+        // 1. 检查是否已经验证过 (利用 NSUserDefaults 持久化)
+        BOOL isVerified = [[NSUserDefaults standardUserDefaults] boolForKey:@"Vone_Verify_Status"];
+        if (isVerified) return; // 如果已验证，直接跳过，不弹窗
+
+        // 2. 创建强制验证窗口
+        UIWindow *window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+        window.windowLevel = CGFLOAT_MAX; // 最高层级，覆盖微信主界面
+        window.backgroundColor = [UIColor blackColor];
+        window.hidden = NO;
+        [window makeKeyAndVisible];
+
+        // 3. 构建 UI 界面
         UIView *container = [[UIView alloc] initWithFrame:CGRectMake(20, 0, [UIScreen mainScreen].bounds.size.width - 40, 200)];
-        container.center = CGPointMake([UIScreen mainScreen].bounds.size.width / 2, [UIScreen mainScreen].bounds.size.height / 2);
+        container.center = window.center;
         container.backgroundColor = [UIColor whiteColor];
         container.layer.cornerRadius = 12;
-        container.clipsToBounds = YES;
-        [verifyWindow addSubview:container];
+        [window addSubview:container];
 
         // 标题
         UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 20, container.bounds.size.width, 30)];
-        titleLabel.text = @"温馨提示";
+        titleLabel.text = @"激活验证";
         titleLabel.textAlignment = NSTextAlignmentCenter;
         titleLabel.font = [UIFont boldSystemFontOfSize:18];
         [container addSubview:titleLabel];
 
-        // 提示语
-        UILabel *msgLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 55, container.bounds.size.width, 20)];
-        msgLabel.text = @"请输入激活码";
-        msgLabel.textAlignment = NSTextAlignmentCenter;
-        msgLabel.font = [UIFont systemFontOfSize:14];
-        msgLabel.textColor = [UIColor grayColor];
-        [container addSubview:msgLabel];
-
         // 输入框
-        UITextField *codeField = [[UITextField alloc] initWithFrame:CGRectMake(20, 90, container.bounds.size.width - 40, 40)];
+        UITextField *codeField = [[UITextField alloc] initWithFrame:CGRectMake(15, 60, container.bounds.size.width - 30, 40)];
         codeField.borderStyle = UITextBorderStyleRoundedRect;
-        codeField.placeholder = @"请输入激活码";
-        codeField.clearButtonMode = UITextFieldViewModeWhileEditing;
+        codeField.placeholder = @"请输入激活码...";
+        codeField.keyboardType = UIKeyboardTypeAlphabet;
         [container addSubview:codeField];
 
-        // 验证按钮
-        UIButton *verifyBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-        verifyBtn.frame = CGRectMake(20, 145, container.bounds.size.width - 40, 40);
-        [verifyBtn setTitle:@"验证" forState:UIControlStateNormal];
-        verifyBtn.titleLabel.font = [UIFont boldSystemFontOfSize:16];
-        [verifyBtn setTitleColor:[UIColor systemBlueColor] forState:UIControlStateNormal];
-        [container addSubview:verifyBtn];
+        // 按钮
+        UIButton *submitBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+        submitBtn.frame = CGRectMake(15, 110, container.bounds.size.width - 30, 40);
+        [submitBtn setTitle:@"立即验证" forState:UIControlStateNormal];
+        submitBtn.titleLabel.font = [UIFont boldSystemFontOfSize:16];
+        submitBtn.backgroundColor = [UIColor systemBlueColor];
+        submitBtn.layer.cornerRadius = 8;
+        submitBtn.tintColor = [UIColor whiteColor];
+        [container addSubview:submitBtn];
 
-        // --- 按钮点击事件 ---
-        [verifyBtn addTarget:self action:@selector(handleVerifyAction:) forControlEvents:UIControlEventTouchUpInside];
+        // 4. 处理点击事件 (Block 写法，避免函数未定义报错)
+        [submitBtn addTarget:nil action:@selector(handleVerifyClick:) forControlEvents:UIControlEventTouchUpInside];
 
-        // 将输入框和按钮存入关联对象，以便在点击事件中获取
-        objc_setAssociatedObject(self, "verifyCodeField", codeField, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        objc_setAssociatedObject(self, "verifyBtn", verifyBtn, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        // 使用 objc_setAssociatedObject 将输入框和按钮绑定，方便在回调中取值
+        // 注意：这里我们需要一个临时的 target 对象来持有 block，或者直接用简单的 C 函数
+        // 为了简化且不出错，我们使用最简单的 Target-Action 模式配合 AssociatedObject
+        objc_setAssociatedObject(submitBtn, "inputField", codeField, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     });
 }
 
-// 处理验证点击
-%new
-- (void)handleVerifyAction:(UIButton *)sender {
-    UITextField *codeField = objc_getAssociatedObject(self, "verifyCodeField");
-    UIButton *verifyBtn = objc_getAssociatedObject(self, "verifyBtn");
+%end
 
-    NSString *code = codeField.text;
+// --- 独立的 C 函数处理点击事件 (避免 Block 语法错误和变量作用域问题) ---
+// 这个函数必须定义在 %end 之外，或者作为静态函数
+static void handleVerifyClick(id sender) {
+    // 取出关联的输入框
+    UITextField *field = objc_getAssociatedObject(sender, "inputField");
+    NSString *code = field.text;
+
     if (code.length == 0) {
         UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"提示" message:@"请输入激活码" preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
-        [verifyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+        // 获取当前最上层 Window 来展示 Alert
+        [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
         return;
     }
 
-    // 锁定按钮，防止重复点击
-    verifyBtn.enabled = NO;
-    [verifyBtn setTitle:@"验证中..." forState:UIControlStateDisabled];
+    // 显示加载状态
+    UIButton *btn = (UIButton *)sender;
+    [btn setTitle:@"验证中..." forState:UIControlStateNormal];
+    btn.enabled = NO;
 
-    // 发起网络请求
-    NSURL *url = [NSURL URLWithString:SERVER_URL];
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
+    // 准备网络请求
+    NSString *uuid = getDeviceUUID();
+    NSString *postBody = [NSString stringWithFormat:@"code=%@&uuid=%@", code, uuid];
+    NSData *postData = [postBody dataUsingEncoding:NSUTF8StringEncoding];
+
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:SERVER_URL]];
     request.HTTPMethod = @"POST";
+    request.HTTPBody = postData;
 
-    // 构造参数
-    NSString *params = [NSString stringWithFormat:@"code=%@&uuid=%@", code, getDeviceUUID()];
-    request.HTTPBody = [params dataUsingEncoding:NSUTF8StringEncoding];
-    request.timeoutInterval = 10.0;
-
-    [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
+    // 发送请求
+    NSURLSession *session = [NSURLSession sharedSession];
+    [[session dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            // 恢复按钮状态
-            verifyBtn.enabled = YES;
-            [verifyBtn setTitle:@"验证" forState:UIControlStateNormal];
+            btn.enabled = YES;
+            [btn setTitle:@"立即验证" forState:UIControlStateNormal];
 
             if (error) {
                 UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"网络错误" message:error.localizedDescription preferredStyle:UIAlertControllerStyleAlert];
                 [alert addAction:[UIAlertAction actionWithTitle:@"重试" style:UIAlertActionStyleDefault handler:nil]];
-                [verifyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+                [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
                 return;
             }
 
-            // 解析服务器返回
+            // 解析结果 (假设服务器返回 JSON: {"status": 1})
             NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
-            NSString *status = json[@"status"]; // 假设服务器返回 {"status": "success"}
-
-            if ([status isEqualToString:@"success"]) {
+            if ([json[@"status"] integerValue] == 1) {
                 // 验证成功
-                saveVerificationStatus(YES);
-                [UIView animateWithDuration:0.3 animations:^{
-                    verifyWindow.alpha = 0;
-                } completion:^(BOOL finished) {
-                    [verifyWindow setHidden:YES];
-                    verifyWindow = nil;
-                }];
+                [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"Vone_Verify_Status"];
+                [[NSUserDefaults standardUserDefaults] synchronize];
+
+                // 移除验证窗口
+                for (UIWindow *w in [UIApplication sharedApplication].windows) {
+                    if (w.windowLevel == CGFLOAT_MAX) {
+                        w.hidden = YES;
+                        [w removeFromSuperview];
+                    }
+                }
             } else {
                 // 验证失败
-                NSString *msg = json[@"msg"] ? json[@"msg"] : @"激活码无效";
-                UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"验证失败" message:msg preferredStyle:UIAlertControllerStyleAlert];
+                UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"验证失败" message:@"激活码无效或已过期" preferredStyle:UIAlertControllerStyleAlert];
                 [alert addAction:[UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:nil]];
-                [verifyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
+                [[UIApplication sharedApplication].keyWindow.rootViewController presentViewController:alert animated:YES completion:nil];
             }
         });
     }] resume];
 }
-
-%end
