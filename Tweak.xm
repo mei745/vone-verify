@@ -1,5 +1,6 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
+#import <objc/runtime.h> // ✅ 修复报错：必须引入这个头文件才能使用关联对象
 
 // --- 配置区 ---
 #define SERVER_URL @"https://vonekeji.cn/verify.php"
@@ -13,133 +14,142 @@ NSString* getDeviceUUID() {
     return [[UIDevice currentDevice] identifierForVendor].UUIDString;
 }
 
-// 显示验证界面的函数
-void ShowVerifyWindow() {
-    // 防止重复弹出
-    if (verifyWindow || isVerified) return;
+// --- 核心逻辑函数 (独立于 Hook 之外，避免 Logos 预处理错误) ---
+void PerformVerificationRequest(UILabel *statusLabel, UITextField *inputField) {
+    NSString *uuid = getDeviceUUID();
+    NSString *code = inputField.text;
 
-    dispatch_async(dispatch_get_main_queue(), ^{
-        verifyWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
-        verifyWindow.windowLevel = UIWindowLevelAlert + 1; // 关键：设置为最高层级，盖住一切
-        verifyWindow.backgroundColor = [UIColor colorWithWhite:0 alpha:0.8]; //以此背景遮罩
-        verifyWindow.hidden = NO;
+    if (code.length == 0) {
+        statusLabel.text = @"请输入激活码";
+        statusLabel.textColor = [UIColor redColor];
+        return;
+    }
 
-        // 创建卡片视图
-        UIView *card = [[UIView alloc] init];
-        card.backgroundColor = [UIColor whiteColor];
-        card.layer.cornerRadius = 16;
-        card.clipsToBounds = YES;
-        [verifyWindow addSubview:card];
+    statusLabel.text = @"正在验证...";
+    statusLabel.textColor = [UIColor grayColor];
 
-        // 使用 AutoLayout 居中 (不使用点语法，兼容性好)
-        card.translatesAutoresizingMaskIntoConstraints = NO;
-        [NSLayoutConstraint activateConstraints:@[
-            [card.centerXAnchor constraintEqualToAnchor:verifyWindow.centerXAnchor],
-            [card.centerYAnchor constraintEqualToAnchor:verifyWindow.centerYAnchor],
-            [card.widthAnchor constraintEqualToConstant:300],
-            [card.heightAnchor constraintEqualToConstant:400]
-        ]];
-
-        // 添加输入框和按钮 (简化示例)
-        UITextField *input = [[UITextField alloc] initWithFrame:CGRectMake(20, 50, 260, 40)];
-        input.placeholder = @"请输入激活码";
-        input.borderStyle = UITextBorderStyleRoundedRect;
-        [card addSubview:input];
-
-        UIButton *btn = [UIButton buttonWithType:UIButtonTypeSystem];
-        btn.frame = CGRectMake(20, 110, 260, 40);
-        [btn setTitle:@"验证" forState:UIControlStateNormal];
-        [card addSubview:btn];
-
-        UILabel *status = [[UILabel alloc] initWithFrame:CGRectMake(20, 170, 260, 40)];
-        status.textAlignment = NSTextAlignmentCenter;
-        status.text = @"等待输入...";
-        [card addSubview:status];
-
-        // 点击事件处理
-        [btn addTarget:nil action:@selector(handleVerifyClick:) forControlEvents:UIControlEventTouchUpInside];
-
-        // 将状态标签和输入框传递给处理函数 (利用 tag 或关联对象，这里简单用 block 模拟)
-        objc_setAssociatedObject(btn, "statusLabel", status, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        objc_setAssociatedObject(btn, "inputField", input, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    });
-}
-
-// 验证逻辑处理函数 (必须声明为 static void 才能在下面被调用)
-static void handleVerifyLogic(NSString *code, UILabel *statusLabel) {
-    statusLabel.text = @"验证中...";
-
+    // 构建请求
     NSURL *url = [NSURL URLWithString:SERVER_URL];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     request.HTTPMethod = @"POST";
-    NSString *body = [NSString stringWithFormat:@"uuid=%@&code=%@", getDeviceUUID(), code];
+
+    NSString *body = [NSString stringWithFormat:@"uuid=%@&code=%@", uuid, code];
     request.HTTPBody = [body dataUsingEncoding:NSUTF8StringEncoding];
+    [request setValue:@"application/x-www-form-urlencoded" forHTTPHeaderField:@"Content-Type"];
 
-    // 使用 NSURLConnection 发送同步请求 (为了不阻塞 UI，我们在后台线程做)
-    // 注意：Theos 环境下有时 NSURLSession 会有奇怪的问题，NSURLConnection 更稳
-    NSOperationQueue *queue = [[NSOperationQueue alloc] init];
-    [NSURLConnection sendAsynchronousRequest:request queue:queue completionHandler:^(NSURLResponse *response, NSData *data, NSError *connectionError) {
-        if (connectionError) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                statusLabel.text = @"网络错误";
-            });
-            return;
-        }
-
-        NSString *result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-        // 假设服务器返回 "success" 代表验证通过
-        BOOL success = [result containsString:@"success"];
-
+    // 发送异步请求
+    [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            if (success) {
+            if (error) {
+                statusLabel.text = @"网络错误";
+                statusLabel.textColor = [UIColor redColor];
+                return;
+            }
+
+            // 简单的解析逻辑 (假设服务器返回 "success" 或 "fail")
+            NSString *result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+            NSLog(@"[VoneVerify] Server Response: %@", result);
+
+            if ([result.lowercaseString containsString:@"success"]) {
+                statusLabel.text = @"验证成功！";
+                statusLabel.textColor = [UIColor greenColor];
                 isVerified = YES;
-                verifyWindow.hidden = YES;
-                verifyWindow = nil;
+
+                // 验证成功后隐藏窗口
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    verifyWindow.hidden = YES;
+                    verifyWindow = nil;
+                });
             } else {
-                statusLabel.text = @"验证失败";
+                statusLabel.text = @"激活码无效";
+                statusLabel.textColor = [UIColor redColor];
             }
         });
-    }];
+    }] resume];
 }
 
-// 这是一个辅助类，用来接收按钮点击事件
-%hook NSObject
-// 我们利用 runtime 动态添加方法，或者简单地在一个已有的类里 hook
-%end
+// --- UI 构建与展示 ---
+void ShowVerifyWindow() {
+    // 如果已经验证过，直接返回
+    if (isVerified) return;
 
-// 为了简化，我们直接在 %hook 块外部定义一个 C 函数来处理点击，但这需要 target-action 机制配合
-// 这里采用一种简单的 trick：hook UIButton 的 sendActionsForControlEvents
-%hook UIButton
-- (void)sendActionsForControlEvents:(UIControlEvents)controlEvents {
-    %orig;
-    // 只有当它是我们的验证按钮时才拦截 (通过 tag 判断，记得给按钮设 tag)
-    if (self.tag == 9999 && controlEvents == UIControlEventTouchUpInside) {
-        // 找到对应的输入框和标签
-        // 注意：在实际工程中最好用子类化，这里为了单文件演示，利用 window 遍历查找
-        UIWindow *win = [UIApplication sharedApplication].windows.lastObject;
-        if (win && win.windowLevel > UIWindowLevelNormal) {
-             // 这种查找方式比较脆弱，建议用上面的 associatedObject 方式
-             // 这里为了演示逻辑，假设我们通过某种方式拿到了输入框的内容
-             // 实际开发建议把 ShowVerifyWindow 写成一个 UIViewController
-        }
+    // 创建一个覆盖全屏的独立窗口，确保在最顶层
+    verifyWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    verifyWindow.windowLevel = CGFLOAT_MAX; // ✅ 关键：设置为最高层级，防止被遮挡
+    verifyWindow.backgroundColor = [UIColor colorWithWhite:0 alpha:0.9]; // 半透明黑色背景
+    verifyWindow.hidden = NO;
+
+    // 创建卡片容器
+    UIView *card = [[UIView alloc] init];
+    card.backgroundColor = [UIColor whiteColor];
+    card.layer.cornerRadius = 12;
+    [verifyWindow addSubview:card];
+
+    // 布局卡片 (使用 frame 布局以兼容旧版 SDK)
+    CGFloat cardWidth = 280;
+    CGFloat cardHeight = 220;
+    card.frame = CGRectMake(([UIScreen mainScreen].bounds.size.width - cardWidth) / 2,
+                            ([UIScreen mainScreen].bounds.size.height - cardHeight) / 2,
+                            cardWidth, cardHeight);
+
+    // 标题
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 20, cardWidth, 30)];
+    titleLabel.text = @"Vone Verify";
+    titleLabel.textAlignment = NSTextAlignmentCenter;
+    titleLabel.font = [UIFont boldSystemFontOfSize:18];
+    [card addSubview:titleLabel];
+
+    // 输入框
+    UITextField *inputField = [[UITextField alloc] initWithFrame:CGRectMake(20, 70, cardWidth - 40, 40)];
+    inputField.placeholder = @"请输入激活码";
+    inputField.borderStyle = UITextBorderStyleRoundedRect;
+    inputField.textAlignment = NSTextAlignmentCenter;
+    [card addSubview:inputField];
+
+    // 状态提示标签
+    UILabel *statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 120, cardWidth, 20)];
+    statusLabel.text = @"等待输入...";
+    statusLabel.textAlignment = NSTextAlignmentCenter;
+    statusLabel.font = [UIFont systemFontOfSize:12];
+    statusLabel.textColor = [UIColor grayColor];
+    [card addSubview:statusLabel];
+
+    // 确认按钮
+    UIButton *btn = [[UIButton alloc] initWithFrame:CGRectMake(20, 150, cardWidth - 40, 40)];
+    [btn setTitle:@"验证" forState:UIControlStateNormal];
+    btn.backgroundColor = [UIColor systemBlueColor];
+    btn.layer.cornerRadius = 8;
+    [btn addTarget:nil action:@selector(handleVerifyBtnClick:) forControlEvents:UIControlEventTouchUpInside];
+    [card addSubview:btn];
+
+    // ✅ 关键：使用 Associated Objects 将控件绑定到按钮上，以便在点击事件中获取它们
+    objc_setAssociatedObject(btn, "statusLabel", statusLabel, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(btn, "inputField", inputField, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+// --- 按钮点击处理函数 (必须是 C 函数或静态方法，不能是 Block) ---
+static void handleVerifyBtnClick(UIButton *btn) {
+    UILabel *statusLabel = objc_getAssociatedObject(btn, "statusLabel");
+    UITextField *inputField = objc_getAssociatedObject(btn, "inputField");
+
+    if (statusLabel && inputField) {
+        PerformVerificationRequest(statusLabel, inputField);
     }
 }
-%end
 
+// --- Hook 入口 ---
+%hook WeChatAppDelegate // 或者 %hook AppDelegate，视微信版本而定
 
-// --- 真正的入口 Hook ---
-// 推荐 Hook didFinishLaunchingWithOptions，这是 App 启动最早且稳定的点
-%hook AppDelegate // 微信通常是这个类名，如果是 SceneDelegate 需调整
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     BOOL orig = %orig;
 
-    // 延迟 2 秒执行，确保微信的主 Window 已经创建完毕
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        if (!isVerified) {
-            ShowVerifyWindow();
-        }
+    // 延迟 1 秒显示，确保微信主界面加载完成
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        NSLog(@"[VoneVerify] Attempting to show verify window...");
+        ShowVerifyWindow();
     });
 
     return orig;
 }
+
 %end
