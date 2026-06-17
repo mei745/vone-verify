@@ -44,10 +44,10 @@ jobs:
         cp -R /tmp/ios-sdks/iPhoneOS16.2.sdk $THEOS/sdks/
         rm -rf /tmp/ios-sdks
 
-    # 5. 设置 Toolchain (关键修复步骤：已更新为 darwin23)
+    # 5. 设置 Toolchain (关键修复步骤)
     - name: Setup Toolchain
       run: |
-        # 修正后的链接：使用 darwin23 版本，这是 v170 中实际存在的文件
+        # 【修正】使用 v170 中的 darwin23 版本，这是目前唯一可用的稳定链接
         TOOLCHAIN_URL="https://github.com/ProcursusTeam/procursus/releases/download/v170/iphoneos-clang-15.0.0-darwin23-x86_64.tar.xz"
 
         echo "Downloading toolchain..."
