@@ -1,5 +1,5 @@
 #import <UIKit/UIKit.h>
-#include <dlfcn.h>
+#include <dlfcn.h> // 用于 exit(0)
 
 // === 配置区域 ===
 #define VERIFY_API_URL @"https://vonekeji.cn/verify.php"
@@ -16,336 +16,193 @@ UIViewController *TopMostViewController() {
         NSSet<UIScene *> *scenes = [UIApplication sharedApplication].connectedScenes;
         for (UIScene *scene in scenes) {
             if ([scene isKindOfClass:[UIWindowScene class]]) {
-                UIWindowScene *windowScene = (UIWindowScene *)scene;
-                if (windowScene.activationState == UISceneActivationStateForegroundActive) {
-                    window = windowScene.keyWindow;
-                    break;
-                }
+                window = [(UIWindowScene *)scene keyWindow];
+                break;
             }
         }
-        if (!window) window = [UIApplication sharedApplication].windows.firstObject;
     } else {
         window = [UIApplication sharedApplication].keyWindow;
     }
-
-    UIViewController *topController = window.rootViewController;
-    while (topController.presentedViewController) {
-        topController = topController.presentedViewController;
-    }
-    return topController;
+    return window.rootViewController;
 }
 
-// --- 核心逻辑类：激活管理器 ---
-@interface VoneActivationManager : NSObject
-+ (instancetype)sharedManager;
-- (void)checkAndShowVerifyViewIfNeeded;
+// --- 核心类：常驻验证窗口 ---
+@interface VoneVerifyView : UIView <UITextFieldDelegate>
+@property (nonatomic, strong) UITextField *codeField;
+@property (nonatomic, strong) UIButton *verifyBtn;
+- (void)show;
+- (void)hide;
 @end
 
-@implementation VoneActivationManager
+@implementation VoneVerifyView
 
-+ (instancetype)sharedManager {
-    static VoneActivationManager *manager = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        manager = [[self alloc] init];
-    });
-    return manager;
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        self.backgroundColor = [UIColor colorWithRed:0 green:0 blue:0 alpha:0.8]; // 半透明黑背景
+        self.tag = 99999; // 特殊标记，防止重复添加
+
+        // 1. 主容器（白色圆角框）
+        UIView *container = [[UIView alloc] init];
+        container.backgroundColor = [UIColor whiteColor];
+        container.layer.cornerRadius = 12;
+        container.clipsToBounds = YES;
+        [self addSubview:container];
+
+        // 2. 标题
+        UILabel *titleLabel = [[UILabel alloc] init];
+        titleLabel.text = @"Vone 激活验证";
+        titleLabel.font = [UIFont boldSystemFontOfSize:18];
+        titleLabel.textAlignment = NSTextAlignmentCenter;
+        [container addSubview:titleLabel];
+
+        // 3. 输入框
+        self.codeField = [[UITextField alloc] init];
+        self.codeField.placeholder = @"请输入激活码";
+        self.codeField.borderStyle = UITextBorderStyleRoundedRect;
+        self.codeField.keyboardType = UIKeyboardTypeAlphabet; // 字母键盘
+        self.codeField.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters; // 自动大写
+        self.codeField.returnKeyType = UIReturnKeyDone;
+        self.codeField.delegate = self;
+        [container addSubview:self.codeField];
+
+        // 4. 验证按钮
+        self.verifyBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+        [self.verifyBtn setTitle:@"立即验证" forState:UIControlStateNormal];
+        self.verifyBtn.titleLabel.font = [UIFont boldSystemFontOfSize:16];
+        self.verifyBtn.backgroundColor = [UIColor systemBlueColor];
+        [self.verifyBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+        self.verifyBtn.layer.cornerRadius = 8;
+        // 【关键修改】使用标准的 Target-Action 绑定事件，不再使用 Runtime
+        [self.verifyBtn addTarget:self action:@selector(verifyAction:) forControlEvents:UIControlEventTouchUpInside];
+        [container addSubview:self.verifyBtn];
+
+        // 布局 (手动计算位置，不依赖 AutoLayout 以免冲突)
+        CGFloat padding = 20;
+        CGFloat width = 280;
+        CGFloat height = 160;
+        container.frame = CGRectMake((frame.size.width - width) / 2, (frame.size.height - height) / 2, width, height);
+
+        titleLabel.frame = CGRectMake(0, 20, width, 30);
+
+        self.codeField.frame = CGRectMake(padding, 60, width - padding * 2, 35);
+
+        self.verifyBtn.frame = CGRectMake(padding, 105, width - padding * 2, 40);
+    }
+    return self;
 }
 
-- (void)checkAndShowVerifyViewIfNeeded {
-    // 1. 检查是否已激活
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    BOOL isActivated = [defaults boolForKey:PREFS_STATUS];
+// 显示窗口
+- (void)show {
+    UIWindow *window = [UIApplication sharedApplication].windows.lastObject;
+    if (!window) return;
 
-    if (isActivated) {
-        NSLog(@"[VoneVerify] 用户已激活，跳过验证。");
-        return;
+    // 如果已经存在，就不重复添加了
+    if ([window viewWithTag:99999]) return;
+
+    self.frame = window.bounds;
+    [window addSubview:self];
+}
+
+// 隐藏窗口（只有验证成功才调用）
+- (void)hide {
+    [self removeFromSuperview];
+}
+
+// 点击空白处收起键盘
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self.codeField resignFirstResponder];
+}
+
+// 回车键收起键盘
+- (BOOL)textFieldShouldReturn:(UITextField *)textField {
+    [textField resignFirstResponder];
+    [self verifyAction:nil]; // 回车也触发验证
+    return YES;
+}
+
+// 验证逻辑
+- (void)verifyAction:(id)sender {
+    NSString *code = self.codeField.text;
+
+    // 1. 判空检查
+    if (code.length == 0 || [code stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]].length == 0) {
+        UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"提示" message:@"激活码不能为空！" preferredStyle:UIAlertControllerStyleAlert];
+        [alert addAction:[UIAlertAction actionWithTitle:@"好的" style:UIAlertActionStyleDefault handler:nil]];
+        [[UIApplication sharedApplication].windows.lastObject.rootViewController presentViewController:alert animated:YES completion:nil];
+        return; // 【关键】这里直接 return，窗口不会消失
     }
 
-    // 2. 未激活，显示验证窗口（强制置顶）
-    [self showPersistentVerifyWindow];
-}
+    // 2. 设置 Loading 状态，防止重复点击
+    self.verifyBtn.enabled = NO;
+    self.verifyBtn.backgroundColor = [UIColor lightGrayColor];
+    [self.verifyBtn setTitle:@"验证中..." forState:UIControlStateNormal];
 
-// --- 创建并显示“死缠烂打”的验证窗口 ---
-- (void)showPersistentVerifyWindow {
-    UIWindow *mainWindow = [UIApplication sharedApplication].keyWindow;
-    if (!mainWindow) return;
-
-    // 防止重复添加
-    UIView *existingOverlay = [mainWindow viewWithTag:99999];
-    if (existingOverlay) return;
-
-    // 创建全屏遮罩 View
-    UIView *overlayView = [[UIView alloc] initWithFrame:mainWindow.bounds];
-    overlayView.tag = 99999; // 标记ID
-    overlayView.backgroundColor = [UIColor colorWithWhite:0 alpha:0.85]; // 深色背景
-    overlayView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-
-    // 添加模糊效果 (可选，增加高级感)
-    UIBlurEffect *blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
-    UIVisualEffectView *blurView = [[UIVisualEffectView alloc] initWithEffect:blurEffect];
-    blurView.frame = overlayView.bounds;
-    blurView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [overlayView addSubview:blurView];
-
-    // --- 构建中间的卡片 ---
-    CGFloat cardWidth = 300;
-    CGFloat cardHeight = 240;
-    UIView *card = [[UIView alloc] initWithFrame:CGRectMake(0, 0, cardWidth, cardHeight)];
-    card.center = overlayView.center;
-    card.backgroundColor = [UIColor whiteColor];
-    card.layer.cornerRadius = 16;
-    card.clipsToBounds = YES;
-
-    // 标题
-    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 30, cardWidth - 40, 30)];
-    titleLabel.text = @"🔒 Vone Verify 授权验证";
-    titleLabel.font = [UIFont boldSystemFontOfSize:18];
-    titleLabel.textColor = [UIColor darkGrayColor];
-    titleLabel.textAlignment = NSTextAlignmentCenter;
-    [card addSubview:titleLabel];
-
-    // 说明文字
-    UILabel *descLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 70, cardWidth - 40, 40)];
-    descLabel.text = @"检测到您尚未激活，请输入正确的激活码。\n⚠️ 输入错误将导致应用重启";
-    descLabel.font = [UIFont systemFontOfSize:13];
-    descLabel.textColor = [UIColor grayColor];
-    descLabel.numberOfLines = 0;
-    descLabel.textAlignment = NSTextAlignmentCenter;
-    [card addSubview:descLabel];
-
-    // 输入框
-    UITextField *codeField = [[UITextField alloc] initWithFrame:CGRectMake(20, 120, cardWidth - 40, 40)];
-    codeField.placeholder = @"请输入激活码 (例如: VIP888)";
-    codeField.borderStyle = UITextBorderStyleRoundedRect;
-    codeField.clearButtonMode = UITextFieldViewModeWhileEditing;
-    codeField.keyboardType = UIKeyboardTypeAlphabet; // 字母键盘
-    codeField.autocapitalizationType = UITextAutocapitalizationTypeAllCharacters; // 自动大写
-    [card addSubview:codeField];
-
-    // 验证按钮
-    UIButton *verifyBtn = [[UIButton alloc] initWithFrame:CGRectMake(20, 170, cardWidth - 40, 40)];
-    verifyBtn.backgroundColor = [UIColor systemBlueColor];
-    verifyBtn.layer.cornerRadius = 8;
-    [verifyBtn setTitle:@"立即验证" forState:UIControlStateNormal];
-    [verifyBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-    [verifyBtn.titleLabel setFont:[UIFont boldSystemFontOfSize:16]];
-
-    // 加载指示器 (初始隐藏)
-    UIActivityIndicatorView *spinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleMedium];
-    spinner.center = verifyBtn.center;
-    spinner.hidden = YES;
-    [card addSubview:spinner];
-
-    // --- 核心交互逻辑 ---
-    __block typeof(self) weakSelf = self;
-    [verifyBtn addTarget:nil action:@selector(buttonClicked:) forControlEvents:UIControlEventTouchUpInside];
-
-    // 使用 objc_setAssociatedObject 传递参数给 C 函数风格的 target
-    // 这里为了简单，我们用 Block 包装一下，或者直接在下面定义一个静态函数
-    // 为了方便，我们创建一个临时的 Target 对象来处理点击
-
-    void (^verifyAction)(void) = ^{
-        NSString *inputCode = [codeField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-
-        // 1. 判空逻辑：如果不为空，才开始验证；如果为空，啥也不做（窗口不消失）
-        if (inputCode.length == 0) {
-            // 抖动动画提示
-            CABasicAnimation *shake = [CABasicAnimation animationWithKeyPath:@"position"];
-            shake.duration = 0.05;
-            shake.repeatCount = 5;
-            shake.autoreverses = YES;
-            shake.fromValue = [NSValue valueWithCGPoint:CGPointMake(card.center.x - 10, card.center.y)];
-            shake.toValue = [NSValue valueWithCGPoint:CGPointMake(card.center.x + 10, card.center.y)];
-            [card.layer addAnimation:shake forKey:@"shake"];
-            return; // 【关键点】直接返回，窗口保留
-        }
-
-        // 2. 开始验证 UI 状态
-        verifyBtn.enabled = NO;
-        verifyBtn.alpha = 0.5;
-        verifyBtn.titleLabel.text = @""; // 清空文字
-        spinner.hidden = NO;
-        [spinner startAnimating];
-
-        // 3. 发起网络请求
-        NSURL *url = [NSURL URLWithString:VERIFY_API_URL];
-        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-        request.HTTPMethod = @"POST";
-        NSString *postString = [NSString stringWithFormat:@"code=%@", inputCode];
-        request.HTTPBody = [postString dataUsingEncoding:NSUTF8StringEncoding];
-        request.timeoutInterval = 10;
-
-        [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                // 恢复 UI
-                verifyBtn.enabled = YES;
-                verifyBtn.alpha = 1.0;
-                [verifyBtn setTitle:@"立即验证" forState:UIControlStateNormal];
-                spinner.hidden = YES;
-                [spinner stopAnimating];
-
-                BOOL success = NO;
-
-                if (!error && data) {
-                    NSString *resultStr = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-                    NSLog(@"[VoneVerify] Server Response: %@", resultStr);
-
-                    // 简单的成功判断逻辑 (兼容 JSON 和 纯文本)
-                    if ([resultStr containsString:@"\"code\":1"] ||
-                        [resultStr containsString:@"\"success\":true"] ||
-                        [resultStr.lowercaseString isEqualToString:@"success"] ||
-                        [resultStr.lowercaseString isEqualToString:@"ok"]) {
-                        success = YES;
-                    }
-                }
-
-                if (success) {
-                    // --- 验证成功 ---
-                    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-                    [defaults setObject:inputCode forKey:PREFS_KEY];
-                    [defaults setBool:YES forKey:PREFS_STATUS];
-                    [defaults synchronize];
-
-                    // 移除窗口
-                    [overlayView removeFromSuperview];
-
-                    // 提示成功
-                    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"恭喜" message:@"激活成功！" preferredStyle:UIAlertControllerStyleAlert];
-                    [alert addAction:[UIAlertAction actionWithTitle:@"进入应用" style:UIAlertActionStyleDefault handler:nil]];
-                    [TopMostViewController() presentViewController:alert animated:YES completion:nil];
-
-                } else {
-                    // --- 验证失败 ---
-                    // 关键点：这里不调用 removeFromSuperview，窗口继续存在！
-                    // 可以弹个 Toast 或者 Shake 动画
-                    UIAlertController *failAlert = [UIAlertController alertControllerWithTitle:@"验证失败" message:@"激活码无效或网络错误，请重试。" preferredStyle:UIAlertControllerStyleAlert];
-                    [failAlert addAction:[UIAlertAction actionWithTitle:@"重试" style:UIAlertActionStyleCancel handler:nil]];
-                    [TopMostViewController() presentViewController:failAlert animated:YES completion:nil];
-                }
-            });
-        }] resume];
-    };
-
-    // 绑定点击事件
-    [verifyBtn addTarget:self action:@selector(dummyAction) forControlEvents:UIControlEventTouchUpInside];
-    // 利用 Associated Object 存 block (这是 OC 比较 trick 的写法，为了保持单文件简洁)
-    objc_setAssociatedObject(verifyBtn, "verifyBlock", verifyAction, OBJC_ASSOCIATION_COPY);
-
-    // 实际触发的方法
-    objc_setAssociatedObject(verifyBtn, "targetAction", ^(id sender){
-        void(^block)(void) = objc_getAssociatedObject(sender, "verifyBlock");
-        if(block) block();
-    }, OBJC_ASSOCIATION_COPY);
-
-    // 由于上面写法比较复杂，我们换一种更稳健的方式：自定义 Delegate 或直接写在这个类里
-    // 为了代码稳定性，我重写一下 Button 的 Target 部分：
-
-    UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(handleVerifyTap:)];
-    [verifyBtn addGestureRecognizer:tap];
-    // 把需要的数据存到 verifyBtn 的父视图或者 tag 里不太好传，
-    // 所以我们直接用实例变量或者关联对象把 overlayView 和 codeField 传进去。
-    objc_setAssociatedObject(verifyBtn, "field_ref", codeField, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    objc_setAssociatedObject(verifyBtn, "overlay_ref", overlayView, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    objc_setAssociatedObject(verifyBtn, "spinner_ref", spinner, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-
-    [card addSubview:verifyBtn];
-    [overlayView addSubview:card];
-    [mainWindow addSubview:overlayView];
-}
-
-// 处理点击
-- (void)handleVerifyTap:(UITapGestureRecognizer *)recognizer {
-    UIButton *btn = (UIButton *)recognizer.view;
-    UITextField *field = objc_getAssociatedObject(btn, "field_ref");
-    UIView *overlay = objc_getAssociatedObject(btn, "overlay_ref");
-    UIActivityIndicatorView *spinner = objc_getAssociatedObject(btn, "spinner_ref");
-
-    NSString *inputCode = [field.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-
-    // 1. 判空：如果为空，只抖动，不消失
-    if (inputCode.length == 0) {
-        CABasicAnimation *shake = [CABasicAnimation animationWithKeyPath:@"position"];
-        shake.duration = 0.06;
-        shake.repeatCount = 4;
-        shake.autoreverses = YES;
-        CGPoint center = btn.superview.center;
-        shake.fromValue = [NSValue valueWithCGPoint:CGPointMake(center.x - 15, center.y)];
-        shake.toValue = [NSValue valueWithCGPoint:CGPointMake(center.x + 15, center.y)];
-        [btn.superview.layer addAnimation:shake forKey:@"shake"];
-        return; // 【关键】直接结束，窗口不动
-    }
-
-    // 2. Loading 状态
-    btn.enabled = NO;
-    btn.alpha = 0.5;
-    [btn setTitle:@"" forState:UIControlStateNormal];
-    spinner.hidden = NO;
-    [spinner startAnimating];
-
-    // 3. 网络请求
-    NSURL *url = [NSURL URLWithString:VERIFY_API_URL];
+    // 3. 发起网络请求
+    NSString *urlString = [NSString stringWithFormat:@"%@?code=%@", VERIFY_API_URL, code];
+    NSURL *url = [NSURL URLWithString:urlString];
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    request.HTTPMethod = @"POST";
-    request.HTTPBody = [[NSString stringWithFormat:@"code=%@", inputCode] dataUsingEncoding:NSUTF8StringEncoding];
-    request.timeoutInterval = 10;
+    request.HTTPMethod = @"GET"; // 或者 POST，看你的PHP支持哪种
 
-    [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         dispatch_async(dispatch_get_main_queue(), ^{
             // 恢复按钮状态
-            btn.enabled = YES;
-            btn.alpha = 1.0;
-            [btn setTitle:@"立即验证" forState:UIControlStateNormal];
-            spinner.hidden = YES;
-            [spinner stopAnimating];
+            self.verifyBtn.enabled = YES;
+            self.verifyBtn.backgroundColor = [UIColor systemBlueColor];
+            [self.verifyBtn setTitle:@"立即验证" forState:UIControlStateNormal];
 
-            BOOL success = NO;
-            if (!error && data) {
-                NSString *res = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-                // 宽松匹配成功关键词
-                if ([res containsString:@"\"code\":1"] || [res.lowercaseString containsString:@"success"]) {
-                    success = YES;
-                }
+            if (error) {
+                UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"网络错误" message:@"无法连接服务器，请检查网络" preferredStyle:UIAlertControllerStyleAlert];
+                [alert addAction:[UIAlertAction actionWithTitle:@"重试" style:UIAlertActionStyleDefault handler:nil]];
+                [[UIApplication sharedApplication].windows.lastObject.rootViewController presentViewController:alert animated:YES completion:nil];
+                return; // 失败，窗口保留
             }
 
-            if (success) {
-                // 成功：保存并移除窗口
-                NSUserDefaults *def = [NSUserDefaults standardUserDefaults];
-                [def setBool:YES forKey:PREFS_STATUS];
-                [def setObject:inputCode forKey:PREFS_KEY];
-                [def synchronize];
+            NSString *result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
+            NSLog(@"[VoneVerify] Server Response: %@", result);
 
-                [overlay removeFromSuperview]; // 窗口消失
+            // 简单的判断逻辑：假设返回 "success" 或包含 "success" 就算通过
+            // 你可以根据实际 PHP 返回值修改这里的判断条件
+            if ([result.lowercaseString containsString:@"success"] || [result isEqualToString:@"1"]) {
+                // === 验证成功 ===
+                // 保存激活状态
+                NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+                [defaults setBool:YES forKey:PREFS_STATUS];
+                [defaults setObject:code forKey:PREFS_KEY];
+                [defaults synchronize];
 
-                UIAlertController *ok = [UIAlertController alertControllerWithTitle:@"成功" message:@"欢迎使用 Vone Verify" preferredStyle:UIAlertControllerStyleAlert];
-                [ok addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
-                [TopMostViewController() presentViewController:ok animated:YES completion:nil];
-
+                // 关闭窗口
+                [self hide];
             } else {
-                // 失败：窗口保留，仅提示
-                UIAlertController *err = [UIAlertController alertControllerWithTitle:@"验证失败" message:@"激活码错误或网络异常，请重新输入。" preferredStyle:UIAlertControllerStyleAlert];
-                [err addAction:[UIAlertAction actionWithTitle:@"重试" style:UIAlertActionStyleCancel handler:nil]];
-                [TopMostViewController() presentViewController:err animated:YES completion:nil];
-                // 注意：这里没有 remove overlay，所以输入框还在！
+                // === 验证失败 ===
+                UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"验证失败" message:@"激活码错误或已失效，请重新输入" preferredStyle:UIAlertControllerStyleAlert];
+                [alert addAction:[UIAlertAction actionWithTitle:@"重试" style:UIAlertActionStyleDefault handler:nil]];
+                [[UIApplication sharedApplication].windows.lastObject.rootViewController presentViewController:alert animated:YES completion:nil];
+                // 失败，窗口保留，用户可以继续改
             }
         });
-    }] resume];
+    }];
+    [task resume];
 }
-
-- (void)dummyAction {} // 占位符
 
 @end
 
-// --- Hook 入口 ---
+// --- Hook 微信启动 ---
 %hook MicroMessengerAppDelegate
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     %orig;
 
-    // 延迟一点执行，确保 Window 已经创建
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [[VoneActivationManager sharedManager] checkAndShowVerifyViewIfNeeded];
-    });
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    BOOL isActivated = [defaults boolForKey:PREFS_STATUS];
+
+    if (!isActivated) {
+        // 延迟一点弹出，等微信界面加载完
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            VoneVerifyView *verifyView = [[VoneVerifyView alloc] initWithFrame:[UIScreen mainScreen].bounds];
+            [verifyView show];
+        });
+    }
 
     return YES;
 }
