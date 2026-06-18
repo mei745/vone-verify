@@ -99,7 +99,7 @@ UIViewController *TopMostViewController() {
             [alert addAction:confirmAction];
             
             // 让弹窗无法通过点击背景关闭
-            alert.modalPresentationStyle = UIModalPresentationStyleOverFullScreen;
+            alert.modalPresentationStyle = UIModalPresentationOverFullScreen; 
             
             // 显示弹窗
             [TopMostViewController() presentViewController:alert animated:YES completion:nil];
