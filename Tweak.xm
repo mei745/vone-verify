@@ -91,12 +91,12 @@ UIViewController *TopMostViewController() {
             [self showWelcomeToast];
         } else if (retCode == 2) {
             [self clearLocalActivateData];
-            [self showTipAlertWithTitle:@"提示" message:@"该激活码已被使用，请重新输入" complete:^{
+            [self showTipAlertWithTitle:@"提示" message:@"该激活码已使用，请重新输入" complete:^{
                 [self showInputCodeAlert];
             }];
         } else {
             [self clearLocalActivateData];
-            [self showTipAlertWithTitle:@"验证失败" message:@"激活码已停用，请联系上家" complete:^{
+            [self showTipAlertWithTitle:@"验证失败" message:@"激活码已停用，请重新输入" complete:^{
                 [self showInputCodeAlert];
             }];
         }
@@ -256,7 +256,7 @@ UIViewController *TopMostViewController() {
             [weakSelf dismissVerificationWindow];
             [weakSelf showWelcomeToast];
         } else if (retCode == 2) {
-            [weakSelf showTipAlertWithTitle:@"验证失败" message:@"该激活码已被使用，请重新输入" complete:^{
+            [weakSelf showTipAlertWithTitle:@"验证失败" message:@"该激活码已使用，请重新输入" complete:^{
             }];
             [sender setTitle:@"验证" forState:UIControlStateNormal];
             inputField.text = @"";
