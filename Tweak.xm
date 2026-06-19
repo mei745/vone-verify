@@ -96,7 +96,7 @@ UIViewController *TopMostViewController() {
             }];
         } else {
             [self clearLocalActivateData];
-            [self showTipAlertWithTitle:@"激活码已停用" message:@"激活码已停用，请联系上家" complete:^{
+            [self showTipAlertWithTitle:@"验证失败" message:@"激活码已停用，请联系上家" complete:^{
                 [self showInputCodeAlert];
             }];
         }
