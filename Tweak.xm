@@ -96,7 +96,7 @@ UIViewController *TopMostViewController() {
             }];
         } else {
             [self clearLocalActivateData];
-            [self showTipAlertWithTitle:@"激活码已失效" message:@"当前保存的激活码验证不通过，请重新输入" complete:^{
+            [self showTipAlertWithTitle:@"激活码已停用" message:@"当前保存的激活码已失效，请重新输入" complete:^{
                 [self showInputCodeAlert];
             }];
         }
@@ -192,7 +192,7 @@ UIViewController *TopMostViewController() {
     [overlay addSubview:alertView];
     
     UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 20, width, 30)];
-    titleLabel.text = @"请输入有效激活码";
+    titleLabel.text = @"请输入激活码";
     titleLabel.textAlignment = NSTextAlignmentCenter;
     titleLabel.font = [UIFont boldSystemFontOfSize:17];
     [alertView addSubview:titleLabel];
@@ -200,7 +200,7 @@ UIViewController *TopMostViewController() {
     UITextField *inputField = [[UITextField alloc] initWithFrame:CGRectMake(15, 60, width - 30, 40)];
     inputField.backgroundColor = [UIColor secondarySystemBackgroundColor];
     inputField.layer.cornerRadius = 8;
-    inputField.placeholder = @"激活码";
+    inputField.placeholder = @"请输入12位激活码";
     inputField.textAlignment = NSTextAlignmentCenter;
     inputField.autocapitalizationType = UITextAutocapitalizationTypeNone;
     inputField.autocorrectionType = UITextAutocorrectionTypeNo;
@@ -256,13 +256,13 @@ UIViewController *TopMostViewController() {
             [weakSelf dismissVerificationWindow];
             [weakSelf showWelcomeToast];
         } else if (retCode == 2) {
-            [weakSelf showTipAlertWithTitle:@"绑定异常" message:@"该激活码已被其他设备绑定，无法继续使用" complete:^{
+            [weakSelf showTipAlertWithTitle:@"绑定异常" message:@"该激活码已被其他设备绑定，请重新输入" complete:^{
             }];
             [sender setTitle:@"提交验证" forState:UIControlStateNormal];
             inputField.text = @"";
             [inputField becomeFirstResponder];
         } else {
-            [sender setTitle:@"激活码无效，重试" forState:UIControlStateNormal];
+            [sender setTitle:@"激活码无效，请重试" forState:UIControlStateNormal];
             [sender setTitleColor:[UIColor systemRedColor] forState:UIControlStateNormal];
             inputField.text = @"";
             [inputField becomeFirstResponder];
