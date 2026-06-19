@@ -150,10 +150,11 @@ UIViewController *TopMostViewController() {
 
 - (void)showWelcomeToast {
     UIViewController *topVC = TopMostViewController();
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"验证成功" message:@"欢迎使用，正在进入应用" preferredStyle:UIAlertControllerStyleAlert];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"验证成功" 
+                                                                   message:@"欢迎使用" 
+                                                            preferredStyle:UIAlertControllerStyleAlert];
     [topVC presentViewController:alert animated:YES completion:nil];
-    
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [alert dismissViewControllerAnimated:YES completion:nil];
     });
 }
