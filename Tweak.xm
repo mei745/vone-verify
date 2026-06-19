@@ -256,7 +256,7 @@ UIViewController *TopMostViewController() {
             [weakSelf dismissVerificationWindow];
             [weakSelf showWelcomeToast];
         } else if (retCode == 2) {
-            [weakSelf showTipAlertWithTitle:@"验证失败" message:@"该激活码已绑定其他设备，请重新输入" complete:^{
+            [weakSelf showTipAlertWithTitle:@"验证失败" message:@"该激活码已被使用，请重新输入" complete:^{
             }];
             [sender setTitle:@"验证" forState:UIControlStateNormal];
             inputField.text = @"";
