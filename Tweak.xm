@@ -91,12 +91,12 @@ UIViewController *TopMostViewController() {
             [self showWelcomeToast];
         } else if (retCode == 2) {
             [self clearLocalActivateData];
-            [self showTipAlertWithTitle:@"提示" message:@"该激活码已被其他设备使用，请重新输入激活码" complete:^{
+            [self showTipAlertWithTitle:@"提示" message:@"该激活码已被使用，请重新输入" complete:^{
                 [self showInputCodeAlert];
             }];
         } else {
             [self clearLocalActivateData];
-            [self showTipAlertWithTitle:@"激活码已停用" message:@"当前保存的激活码已失效，请重新输入" complete:^{
+            [self showTipAlertWithTitle:@"激活码已停用" message:@"激活码已停用，请联系上家" complete:^{
                 [self showInputCodeAlert];
             }];
         }
@@ -192,7 +192,7 @@ UIViewController *TopMostViewController() {
     [overlay addSubview:alertView];
     
     UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 20, width, 30)];
-    titleLabel.text = @"请输入激活码";
+    titleLabel.text = @"授权";
     titleLabel.textAlignment = NSTextAlignmentCenter;
     titleLabel.font = [UIFont boldSystemFontOfSize:17];
     [alertView addSubview:titleLabel];
@@ -214,7 +214,7 @@ UIViewController *TopMostViewController() {
     
     UIButton *confirmBtn = [UIButton buttonWithType:UIButtonTypeSystem];
     confirmBtn.frame = CGRectMake(0, 110, width, 80);
-    [confirmBtn setTitle:@"提交验证" forState:UIControlStateNormal];
+    [confirmBtn setTitle:@"验证" forState:UIControlStateNormal];
     confirmBtn.titleLabel.font = [UIFont boldSystemFontOfSize:17];
     [confirmBtn addTarget:self action:@selector(handleVerifyTap:) forControlEvents:UIControlEventTouchUpInside];
     [alertView addSubview:confirmBtn];
@@ -235,7 +235,7 @@ UIViewController *TopMostViewController() {
     NSString *code = [inputField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
     
     if (code.length == 0) {
-        [sender setTitle:@"激活码不能为空" forState:UIControlStateNormal];
+        [sender setTitle:@"激活码不能为空，请输入" forState:UIControlStateNormal];
         [sender setTitleColor:[UIColor systemRedColor] forState:UIControlStateNormal];
         return;
     }
@@ -256,13 +256,13 @@ UIViewController *TopMostViewController() {
             [weakSelf dismissVerificationWindow];
             [weakSelf showWelcomeToast];
         } else if (retCode == 2) {
-            [weakSelf showTipAlertWithTitle:@"绑定异常" message:@"该激活码已被其他设备绑定，请重新输入" complete:^{
+            [weakSelf showTipAlertWithTitle:@"验证失败" message:@"该激活码已绑定其他设备，请重新输入" complete:^{
             }];
-            [sender setTitle:@"提交验证" forState:UIControlStateNormal];
+            [sender setTitle:@"验证" forState:UIControlStateNormal];
             inputField.text = @"";
             [inputField becomeFirstResponder];
         } else {
-            [sender setTitle:@"激活码无效，请重试" forState:UIControlStateNormal];
+            [sender setTitle:@"激活码不存在，请检查后重试" forState:UIControlStateNormal];
             [sender setTitleColor:[UIColor systemRedColor] forState:UIControlStateNormal];
             inputField.text = @"";
             [inputField becomeFirstResponder];
