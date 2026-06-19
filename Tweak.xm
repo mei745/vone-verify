@@ -41,24 +41,12 @@ UIViewController *TopMostViewController() {
     return topVC;
 }
 
-// 获取设备唯一UUID（用于设备绑定）
-- (NSString *)getDeviceUniqueUUID {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    NSString *uuid = [defaults stringForKey:DEVICE_UUID_KEY];
-    if (!uuid || uuid.length == 0) {
-        uuid = [[UIDevice currentDevice].identifierForVendor UUIDString];
-        [defaults setObject:uuid forKey:DEVICE_UUID_KEY];
-        [defaults synchronize];
-    }
-    return uuid;
-}
-
 @interface VoneVerifyManager : NSObject
 + (instancetype)sharedInstance;
-// 启动全局校验入口
 - (void)startGlobalAppVerify;
 - (void)showInputCodeAlert;
 - (void)dismissVerificationWindow;
+- (NSString *)getDeviceUniqueUUID;
 @end
 
 @implementation VoneVerifyManager
@@ -87,55 +75,42 @@ UIViewController *TopMostViewController() {
     return uuid;
 }
 
-#pragma mark - 全局启动校验（每次APP重启都会执行）
 - (void)startGlobalAppVerify {
-    // 防止弹窗重复叠加
     if (_isShowingAlert) return;
 
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSString *localSavedCode = [defaults stringForKey:PREFS_KEY];
     
-    // 本地没有存储激活码，直接弹出输入框
     if (!localSavedCode || localSavedCode.length == 0) {
         [self showInputCodeAlert];
         return;
     }
     
-    // 本地有码，联网二次校验有效性 + 设备绑定
     [self sendFullVerifyRequestWithCode:localSavedCode completion:^(NSInteger retCode) {
-        switch (retCode) {
-            case 1:
-                // 校验通过：展示欢迎提示，自动关闭，正常使用APP
-                [self showWelcomeToast];
-                break;
-            case 2:
-                // 该激活码已绑定其他设备，清空本地记录，强制弹窗输入
-                [self clearLocalActivateData];
-                [self showTipAlertWithTitle:@"提示" message:@"该激活码已被其他设备使用，请重新输入激活码" complete:^{
-                    [self showInputCodeAlert];
-                }];
-                break;
-            case 0:
-            default:
-                // 激活码失效、错误，清空本地记录，强制弹窗
-                [self clearLocalActivateData];
-                [self showTipAlertWithTitle:@"激活码已失效" message:@"当前保存的激活码验证不通过，请重新输入" complete:^{
-                    [self showInputCodeAlert];
-                }];
-                break;
+        if (retCode == 1) {
+            [self showWelcomeToast];
+        } else if (retCode == 2) {
+            [self clearLocalActivateData];
+            [self showTipAlertWithTitle:@"提示" message:@"该激活码已被其他设备使用，请重新输入激活码" complete:^{
+                [self showInputCodeAlert];
+            }];
+        } else {
+            [self clearLocalActivateData];
+            [self showTipAlertWithTitle:@"激活码已失效" message:@"当前保存的激活码验证不通过，请重新输入" complete:^{
+                [self showInputCodeAlert];
+            }];
         }
     }];
 }
 
-// 完整网络请求：携带code+设备uuid传给服务端
 - (void)sendFullVerifyRequestWithCode:(NSString *)code completion:(void (^)(NSInteger retCode))completion {
     if (_verifyTask && _verifyTask.state == NSURLSessionTaskStateRunning) {
         [_verifyTask cancel];
     }
     
     NSString *deviceId = [self getDeviceUniqueUUID];
-    NSString *encodedCode = [code stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLQueryAllowedCharacterSet];
-    NSString *encodedDeviceId = [deviceId stringByAddingPercentEncodingWithAllowedCharacters:NSCharacterSet.URLQueryAllowedCharacterSet];
+    NSString *encodedCode = [code stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
+    NSString *encodedDeviceId = [deviceId stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLQueryAllowedCharacterSet]];
     
     NSString *urlString = [NSString stringWithFormat:@"%@?code=%@&device_id=%@", VERIFY_API_URL, encodedCode, encodedDeviceId];
     NSURL *url = [NSURL URLWithString:urlString];
@@ -166,7 +141,6 @@ UIViewController *TopMostViewController() {
     [_verifyTask resume];
 }
 
-// 清除本地全部激活记录
 - (void)clearLocalActivateData {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults removeObjectForKey:PREFS_KEY];
@@ -174,7 +148,6 @@ UIViewController *TopMostViewController() {
     [defaults synchronize];
 }
 
-// 欢迎提示弹窗，自动消失
 - (void)showWelcomeToast {
     UIViewController *topVC = TopMostViewController();
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"验证成功" message:@"欢迎使用，正在进入应用" preferredStyle:UIAlertControllerStyleAlert];
@@ -185,7 +158,6 @@ UIViewController *TopMostViewController() {
     });
 }
 
-// 普通提示弹窗
 - (void)showTipAlertWithTitle:(NSString *)title message:(NSString *)msg complete:(void(^)(void))complete {
     UIViewController *topVC = TopMostViewController();
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:msg preferredStyle:UIAlertControllerStyleAlert];
@@ -196,7 +168,6 @@ UIViewController *TopMostViewController() {
     [topVC presentViewController:alert animated:YES completion:nil];
 }
 
-// 常驻激活码输入弹窗（无法关闭，必须输入正确激活码）
 - (void)showInputCodeAlert {
     if (_isShowingAlert) return;
     _isShowingAlert = YES;
@@ -213,10 +184,7 @@ UIViewController *TopMostViewController() {
     
     CGFloat width = 270;
     CGFloat height = 190;
-    UIView *alertView = [[UIView alloc] initWithFrame:CGRectMake(
-        (vc.view.bounds.size.width - width) / 2,
-        (vc.view.bounds.size.height - height) / 2 - 20,
-        width, height)];
+    UIView *alertView = [[UIView alloc] initWithFrame:CGRectMake((vc.view.bounds.size.width - width) / 2, (vc.view.bounds.size.height - height) / 2 - 20, width, height)];
     alertView.backgroundColor = [UIColor systemBackgroundColor];
     alertView.layer.cornerRadius = 14;
     alertView.clipsToBounds = YES;
@@ -278,45 +246,31 @@ UIViewController *TopMostViewController() {
     __weak typeof(self) weakSelf = self;
     [self sendFullVerifyRequestWithCode:code completion:^(NSInteger retCode) {
         sender.enabled = YES;
-        switch (retCode) {
-            case 1:
-            {
-                // 验证通过，保存激活码+状态，关闭弹窗
-                NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-                [defaults setObject:code forKey:PREFS_KEY];
-                [defaults setBool:YES forKey:PREFS_STATUS];
-                [defaults synchronize];
-                
-                [weakSelf dismissVerificationWindow];
-                [weakSelf showWelcomeToast];
-                break;
-            }
-            case 2:
-            {
-                [weakSelf showTipAlertWithTitle:@"绑定异常" message:@"该激活码已被其他设备绑定，无法继续使用" complete:^{
-                    // 弹窗关闭后依旧留在输入界面，不能退出
-                }];
-                [sender setTitle:@"提交验证" forState:UIControlStateNormal];
-                inputField.text = @"";
-                [inputField becomeFirstResponder];
-                break;
-            }
-            case 0:
-            default:
-            {
-                [sender setTitle:@"激活码无效，重试" forState:UIControlStateNormal];
-                [sender setTitleColor:[UIColor systemRedColor] forState:UIControlStateNormal];
-                inputField.text = @"";
-                [inputField becomeFirstResponder];
-                break;
-            }
+        if (retCode == 1) {
+            NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+            [defaults setObject:code forKey:PREFS_KEY];
+            [defaults setBool:YES forKey:PREFS_STATUS];
+            [defaults synchronize];
+            
+            [weakSelf dismissVerificationWindow];
+            [weakSelf showWelcomeToast];
+        } else if (retCode == 2) {
+            [weakSelf showTipAlertWithTitle:@"绑定异常" message:@"该激活码已被其他设备绑定，无法继续使用" complete:^{
+            }];
+            [sender setTitle:@"提交验证" forState:UIControlStateNormal];
+            inputField.text = @"";
+            [inputField becomeFirstResponder];
+        } else {
+            [sender setTitle:@"激活码无效，重试" forState:UIControlStateNormal];
+            [sender setTitleColor:[UIColor systemRedColor] forState:UIControlStateNormal];
+            inputField.text = @"";
+            [inputField becomeFirstResponder];
         }
     }];
 }
 
 @end
 
-// Hook微信启动，每次启动都执行校验
 %hook MicroMessengerAppDelegate
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     BOOL origRes = %orig;
