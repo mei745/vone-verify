@@ -18,104 +18,135 @@ UIViewController *TopMostViewController() {
         NSSet<UIScene *> *scenes = [UIApplication sharedApplication].connectedScenes;
         for (UIScene *scene in scenes) {
             if ([scene isKindOfClass:[UIWindowScene class]]) {
-                UIWindowScene *windowScene = (UIWindowScene *)scene;
-                for (UIWindow *w in windowScene.windows) {
-                    if (w.isKeyWindow) {
-                        window = w;
-                        break;
-                    }
-                }
+                window = [(UIWindowScene *)scene keyWindow];
+                break;
             }
         }
     } else {
         window = [UIApplication sharedApplication].keyWindow;
     }
 
-    UIViewController *rootVC = window.rootViewController;
-    while (rootVC.presentedViewController) {
-        rootVC = rootVC.presentedViewController;
+    UIViewController *topVC = window.rootViewController;
+    while (topVC.presentedViewController) {
+        topVC = topVC.presentedViewController;
     }
-    return rootVC;
+    return topVC;
 }
 
 // --- 核心验证类 ---
 @interface VoneVerifyManager : NSObject
-+ (void)showVerifyWindow;
++ (instancetype)sharedInstance;
+- (void)showVerificationWindow;
 @end
 
 @implementation VoneVerifyManager
 
-+ (void)showVerifyWindow {
-    // 如果已经验证过，直接返回
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    if ([defaults boolForKey:PREFS_STATUS]) {
-        return;
-    }
-
-    dispatch_async(dispatch_get_main_queue(), ^{
-        UIViewController *vc = TopMostViewController();
-
-        // 创建全屏遮罩层
-        UIView *overlay = [[UIView alloc] initWithFrame:vc.view.bounds];
-        overlay.backgroundColor = [UIColor colorWithWhite:0 alpha:0.5];
-        overlay.tag = 9999; // 标记以便后续查找
-        [vc.view addSubview:overlay];
-
-        // 创建弹窗容器 (模拟 UIAlertController 风格)
-        CGFloat width = 270;
-        CGFloat height = 180;
-        UIView *alertView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, width, height)];
-        alertView.center = vc.view.center;
-        alertView.backgroundColor = [UIColor colorWithRed:0.95 green:0.95 blue:0.97 alpha:1.0]; // 浅灰背景
-        alertView.layer.cornerRadius = 14;
-        alertView.clipsToBounds = YES;
-        [overlay addSubview:alertView];
-
-        // 标题
-        UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 20, width, 30)];
-        titleLabel.text = @"Vone 激活验证";
-        titleLabel.textAlignment = NSTextAlignmentCenter;
-        titleLabel.font = [UIFont boldSystemFontOfSize:17];
-        [alertView addSubview:titleLabel];
-
-        // 输入框
-        UITextField *inputField = [[UITextField alloc] initWithFrame:CGRectMake(15, 60, width - 30, 35)];
-        inputField.placeholder = @"请输入激活码";
-        inputField.backgroundColor = [UIColor whiteColor];
-        inputField.layer.cornerRadius = 8;
-        inputField.clearButtonMode = UITextFieldViewModeWhileEditing;
-        inputField.autocapitalizationType = UITextAutocapitalizationTypeNone;
-        inputField.autocorrectionType = UITextAutocorrectionTypeNo;
-        inputField.borderStyle = UITextBorderStyleNone;
-        inputField.textAlignment = NSTextAlignmentCenter;
-        [alertView addSubview:inputField];
-
-        // 确认按钮
-        UIButton *confirmBtn = [UIButton buttonWithType:UIButtonTypeSystem];
-        confirmBtn.frame = CGRectMake(15, 110, width - 30, 40);
-        [confirmBtn setTitle:@"立即验证" forState:UIControlStateNormal];
-        confirmBtn.titleLabel.font = [UIFont boldSystemFontOfSize:16];
-        confirmBtn.backgroundColor = [UIColor systemBlueColor];
-        confirmBtn.layer.cornerRadius = 8;
-        [confirmBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
-        [alertView addSubview:confirmBtn];
-
-        // 使用 Tag 来传递数据，避免 Runtime 报错
-        overlay.tag = 1001;
-        confirmBtn.tag = 1002;
-        inputField.tag = 1003;
-
-        // 按钮点击事件
-        [confirmBtn addTarget:self action:@selector(handleVerifyClick:) forControlEvents:UIControlEventTouchUpInside];
++ (instancetype)sharedInstance {
+    static VoneVerifyManager *instance = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        instance = [[self alloc] init];
     });
+    return instance;
 }
 
-+ (void)handleVerifyClick:(UIButton *)sender {
-    // 通过层级关系找到输入框和遮罩层
+// 发送网络请求
+- (void)sendVerifyRequestWithCode:(NSString *)code completion:(void (^)(BOOL success))completion {
+    NSString *urlString = [NSString stringWithFormat:@"%@?code=%@", VERIFY_API_URL, code];
+    NSURL *url = [NSURL URLWithString:urlString];
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
+    [req setHTTPMethod:@"GET"];
+
+    // 修复：使用方括号语法代替点语法
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        BOOL isSuccess = NO;
+        if (!error && data) {
+            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            if ([json[@"status"] integerValue] == 1) {
+                isSuccess = YES;
+            }
+        }
+        // 回到主线程处理 UI
+        dispatch_async(dispatch_get_main_queue(), ^{
+            completion(isSuccess);
+        });
+    }];
+    [task resume];
+}
+
+// 显示自定义弹窗
+- (void)showVerificationWindow {
+    UIViewController *vc = TopMostViewController();
+    if (!vc.view.window) return;
+
+    // 1. 创建遮罩层
+    UIView *overlay = [[UIView alloc] initWithFrame:vc.view.bounds];
+    overlay.backgroundColor = [UIColor colorWithWhite:0 alpha:0.4];
+    overlay.tag = 9999; // 标记以便后续查找移除
+    [vc.view addSubview:overlay];
+
+    // 2. 创建弹窗容器 (模拟 iOS 原生 Alert 样式)
+    CGFloat width = 270;
+    CGFloat height = 180;
+    UIView *alertView = [[UIView alloc] initWithFrame:CGRectMake((vc.view.bounds.size.width - width) / 2, (vc.view.bounds.size.height - height) / 2, width, height)];
+    alertView.backgroundColor = [UIColor colorWithRed:0.95 green:0.95 blue:0.95 alpha:1.0]; // 浅灰色背景 #F2F2F7
+    alertView.layer.cornerRadius = 14;
+    alertView.clipsToBounds = YES;
+    [overlay addSubview:alertView];
+
+    // 3. 标题 Label
+    UILabel *titleLabel = [[UILabel alloc] initWithFrame:CGRectMake(0, 20, width, 30)];
+    titleLabel.text = @"Vone 激活验证";
+    titleLabel.textAlignment = NSTextAlignmentCenter;
+    titleLabel.font = [UIFont boldSystemFontOfSize:17];
+    [alertView addSubview:titleLabel];
+
+    // 4. 输入框
+    UITextField *inputField = [[UITextField alloc] initWithFrame:CGRectMake(15, 60, width - 30, 40)];
+    inputField.backgroundColor = [UIColor whiteColor];
+    inputField.layer.cornerRadius = 8;
+    inputField.placeholder = @"请输入激活码";
+    inputField.textAlignment = NSTextAlignmentCenter;
+    inputField.borderStyle = UITextBorderStyleNone;
+    inputField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    inputField.autocorrectionType = UITextAutocorrectionTypeNo;
+    [alertView addSubview:inputField];
+
+    // 5. 确认按钮
+    UIButton *confirmBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    confirmBtn.frame = CGRectMake(0, 110, width, 50); // 占据底部
+    [confirmBtn setTitle:@"立即验证" forState:UIControlStateNormal];
+    confirmBtn.titleLabel.font = [UIFont boldSystemFontOfSize:17];
+    [alertView addSubview:confirmBtn];
+
+    // 分割线 (可选，增加细节)
+    UIView *line = [[UIView alloc] initWithFrame:CGRectMake(0, 110, width, 0.5)];
+    line.backgroundColor = [UIColor colorWithRed:0.78 green:0.78 blue:0.8 alpha:1.0];
+    [alertView addSubview:line];
+
+    // 6. 按钮点击逻辑
+    __block UIButton *btnRef = confirmBtn;
+    __block UIView *alertRef = alertView;
+    __block UIView *overlayRef = overlay;
+
+    [confirmBtn addTarget:self action:@selector(handleVerifyTap:) forControlEvents:UIControlEventTouchUpInside];
+
+    // 利用 objc_setAssociatedObject 传递参数（如果不想引入 runtime.h，可以用全局变量或 Block 属性，这里为了简洁直接用 Tag 查找）
+    // 为了避开 Runtime 报错，我们直接在 Button 的 Action 里通过 Tag 找父视图
+}
+
+// 按钮响应事件
+- (void)handleVerifyTap:(UIButton *)sender {
+    // 向上查找父视图
     UIView *alertView = sender.superview;
-    UITextField *inputField = [alertView viewWithTag:1003];
     UIView *overlay = alertView.superview;
-    NSString *code = [inputField.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    UITextField *inputField = (UITextField *)[alertView viewWithTag:100]; // 需要给 Input 设 Tag
+    // 由于上面没设 Tag，我们重新遍历一下或者简单点：
+    // 实际上上面的代码里 inputField 没有设 tag，这里修正一下逻辑
+
+    // 重新获取 inputField (它是 alertView 的第二个子视图，index 2)
+    UITextField *field = (UITextField *)[alertView.subviews objectAtIndex:2];
+    NSString *code = field.text;
 
     if (code.length == 0) {
         [sender setTitle:@"请输入激活码" forState:UIControlStateNormal];
@@ -123,44 +154,36 @@ UIViewController *TopMostViewController() {
         return;
     }
 
+    // 正在验证中...
     [sender setTitle:@"验证中..." forState:UIControlStateNormal];
+    [sender setTitleColor:[UIColor systemBlueColor] forState:UIControlStateNormal];
     sender.enabled = NO;
 
-    // 发起网络请求
-    NSURL *url = [NSURL URLWithString:VERIFY_API_URL];
-    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
-    req.HTTPMethod = @"POST";
-    req.HTTPBody = [[NSString stringWithFormat:@"code=%@", code] dataUsingEncoding:NSUTF8StringEncoding];
+    [self sendVerifyRequestWithCode:code completion:^(BOOL success) {
+        sender.enabled = YES;
+        if (success) {
+            // 验证成功
+            NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+            [defaults setObject:code forKey:PREFS_KEY];
+            [defaults setBool:YES forKey:PREFS_STATUS];
+            [defaults synchronize];
 
-    [NSURLSession.sharedSession dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            sender.enabled = YES;
-
-            BOOL isSuccess = NO;
-            if (!error && data) {
-                NSString *result = [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding];
-                // 假设服务器返回 "success" 表示验证通过
-                if ([result.lowercaseString containsString:@"success"]) {
-                    isSuccess = YES;
-                }
-            }
-
-            if (isSuccess) {
-                // 验证成功：保存状态
-                NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-                [defaults setBool:YES forKey:PREFS_STATUS];
-                [defaults setObject:code forKey:PREFS_KEY];
-                [defaults synchronize];
-
-                // 移除遮罩层
-                [overlay removeFromSuperview];
-            } else {
-                // 验证失败：提示错误，但不移除窗口
-                [sender setTitle:@"激活码错误，请重试" forState:UIControlStateNormal];
-                [sender setTitleColor:[UIColor redColor] forState:UIControlStateNormal];
-            }
-        });
-    }] resume];
+            // 提示成功并移除窗口
+            UIAlertController *successAlert = [UIAlertController alertControllerWithTitle:@"验证成功" message:@"即将进入微信" preferredStyle:UIAlertControllerStyleAlert];
+            [viewController presentViewController:successAlert animated:YES completion:^{
+                dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+                    [successAlert dismissViewControllerAnimated:YES completion:nil];
+                    [overlay removeFromSuperview]; // 彻底移除验证窗口
+                });
+            }];
+        } else {
+            // 验证失败
+            [sender setTitle:@"激活码错误，重试" forState:UIControlStateNormal];
+            [sender setTitleColor:[UIColor redColor] forState:UIControlStateNormal];
+            field.text = @""; // 清空输入框
+            [field becomeFirstResponder]; // 聚焦输入框
+        }
+    }];
 }
 
 @end
@@ -171,10 +194,15 @@ UIViewController *TopMostViewController() {
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
     %orig;
 
-    // 延迟一点弹出，防止影响微信初始化动画
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [VoneVerifyManager showVerifyWindow];
-    });
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    BOOL isActivated = [defaults boolForKey:PREFS_STATUS];
+
+    if (!isActivated) {
+        // 延迟一点弹出，防止遮挡启动图或加载动画
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [[VoneVerifyManager sharedInstance] showVerificationWindow];
+        });
+    }
 
     return YES;
 }
