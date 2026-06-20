@@ -29,7 +29,7 @@ UIViewController *TopMostViewController() {
     while (YES) {
         if ([topVC isKindOfClass:[UINavigationController class]]) {
             topVC = [(UINavigationController *)topVC topViewController];
-        } else if ([topVC isKindOfClass:[UITabBarController class]) {
+        } else if ([topVC isKindOfClass:[UITabBarController class]]) {
             topVC = [(UITabBarController *)topVC selectedViewController];
         } else if (topVC.presentedViewController) {
             topVC = topVC.presentedViewController;
