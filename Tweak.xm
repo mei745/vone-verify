@@ -94,6 +94,9 @@ UIViewController *TopMostViewController() {
             [self showTipAlertWithTitle:@"提示" message:@"该激活码已使用，请重新输入" complete:^{
                 [self showInputCodeAlert];
             }];
+        } else if (retCode == -99) {
+            // 网络异常专属弹窗
+            [self showTipAlertWithTitle:@"网络异常" message:@"网络错误，请检查网络后重试" complete:nil];
         } else {
             [self clearLocalActivateData];
             [self showTipAlertWithTitle:@"验证失败" message:@"激活码已停用，请重新输入" complete:^{
@@ -116,7 +119,7 @@ UIViewController *TopMostViewController() {
     NSURL *url = [NSURL URLWithString:urlString];
     if (!url) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            completion(0);
+            completion(-99); // URL拼接失败，归类网络错误
         });
         return;
     }
@@ -127,10 +130,15 @@ UIViewController *TopMostViewController() {
     
     _verifyTask = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSInteger resultCode = 0;
-        if (!error && data) {
+        // 判断：断网、超时、无数据、JSON解析失败全部标记为-99网络错误
+        if (error || !data) {
+            resultCode = -99;
+        } else {
             NSError *jsonErr;
             NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonErr];
-            if (json && !jsonErr) {
+            if (!json || jsonErr) {
+                resultCode = -99;
+            } else {
                 resultCode = [json[@"status"] integerValue];
             }
         }
@@ -258,6 +266,12 @@ UIViewController *TopMostViewController() {
         } else if (retCode == 2) {
             [weakSelf showTipAlertWithTitle:@"验证失败" message:@"该激活码已使用，请重新输入" complete:^{
             }];
+            [sender setTitle:@"验证" forState:UIControlStateNormal];
+            inputField.text = @"";
+            [inputField becomeFirstResponder];
+        } else if (retCode == -99) {
+            // 手动输入激活码时网络错误提示
+            [weakSelf showTipAlertWithTitle:@"网络异常" message:@"网络错误，请检查网络后重试" complete:nil];
             [sender setTitle:@"验证" forState:UIControlStateNormal];
             inputField.text = @"";
             [inputField becomeFirstResponder];
