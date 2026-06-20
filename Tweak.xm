@@ -94,7 +94,7 @@ UIViewController *TopMostViewController() {
             }];
         } else if (retCode == -99) {
             // 网络异常，弹窗后让用户有机会重试
-            [self showTipAlertWithTitle:@"网络异常" message:@"网络错误，请检查网络后重试" complete:^{
+            [self showTipAlertWithTitle:@"验证失败" message:@"网络错误，请检查网络后重试" complete:^{
                 [self showInputCodeAlert];
             }];
         } else {
@@ -276,7 +276,7 @@ UIViewController *TopMostViewController() {
             [inputField becomeFirstResponder];
         } else if (retCode == -99) {
             // 手动输入时网络异常，弹窗后留在输入界面
-            [weakSelf showTipAlertWithTitle:@"网络异常" message:@"网络错误，请检查网络后重试" complete:nil];
+            [weakSelf showTipAlertWithTitle:@"验证失败" message:@"网络错误，请检查网络后重试" complete:nil];
             [sender setTitle:@"验证" forState:UIControlStateNormal];
             inputField.text = @"";
             [inputField becomeFirstResponder];
