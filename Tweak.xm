@@ -97,9 +97,8 @@ UIViewController *TopMostViewController() {
                 [self showInputCodeAlert];
             }];
         } else if (retCode == -99) {
-            // ========== 改造重点 ==========
             // 网络异常，点确定直接弹出输入框，不让进APP
-            [self showTipAlertWithTitle:@"网络异常" message:@"网络错误，请检查网络后重试" complete:^{
+            [self showTipAlertWithTitle:@"验证失败" message:@"网络错误，请检查网络后重试" complete:^{
                 [self showInputCodeAlert];
             }];
         } else {
@@ -164,7 +163,7 @@ UIViewController *TopMostViewController() {
 - (void)showWelcomeToast {
     UIViewController *topVC = TopMostViewController();
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"验证成功" 
-                                                                   message:@"欢迎使用" 
+                                                                   message:@"欢 迎 使 用" 
                                                             preferredStyle:UIAlertControllerStyleAlert];
     [topVC presentViewController:alert animated:YES completion:nil];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -188,7 +187,13 @@ UIViewController *TopMostViewController() {
     
     [self dismissVerificationWindow];
     UIViewController *vc = TopMostViewController();
-    if (!vc || !vc.view.window) return;
+    if (!vc || !vc.view.window) {
+        _isShowingAlert = NO; 
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            [self showInputCodeAlert];
+        });
+        return;
+    }
 
     UIView *overlay = [[UIView alloc] initWithFrame:vc.view.bounds];
     overlay.backgroundColor = [UIColor colorWithWhite:0 alpha:0.5];
@@ -276,7 +281,7 @@ UIViewController *TopMostViewController() {
             [inputField becomeFirstResponder];
         } else if (retCode == -99) {
             // 手动输入激活码时网络异常，弹窗后留在输入界面，不关闭授权框
-            [weakSelf showTipAlertWithTitle:@"网络异常" message:@"网络错误，请检查网络后重试" complete:nil];
+            [weakSelf showTipAlertWithTitle:@"验证失败" message:@"网络错误，请检查网络后重试" complete:nil];
             [sender setTitle:@"验证" forState:UIControlStateNormal];
             inputField.text = @"";
             [inputField becomeFirstResponder];
