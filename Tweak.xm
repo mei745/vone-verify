@@ -4,10 +4,10 @@
 
 // === 配置区域 ===
 #define VERIFY_API_URL @"https://vonekeji.cn/verify.php"
-#define PREFS_KEY      @"vone_activation_code"
-#define PREFS_STATUS   @"vone_is_activated"
-#define ALERT_TAG      9999
-#define INPUT_TAG      100
+#define PREFS_KEY @"vone_activation_code"
+#define PREFS_STATUS @"vone_is_activated"
+#define ALERT_TAG 9999
+#define INPUT_TAG 100
 #define DEVICE_UUID_KEY @"vone_device_uuid"
 
 @interface MicroMessengerAppDelegate : UIResponder <UIApplicationDelegate>
@@ -25,12 +25,11 @@ UIViewController *TopMostViewController() {
     } else {
         window = [UIApplication sharedApplication].keyWindow;
     }
-
     UIViewController *topVC = window.rootViewController;
     while (YES) {
         if ([topVC isKindOfClass:[UINavigationController class]]) {
             topVC = [(UINavigationController *)topVC topViewController];
-        } else if ([topVC isKindOfClass:[UITabBarController class]]) {
+        } else if ([topVC isKindOfClass:[UITabBarController class]) {
             topVC = [(UITabBarController *)topVC selectedViewController];
         } else if (topVC.presentedViewController) {
             topVC = topVC.presentedViewController;
@@ -49,8 +48,7 @@ UIViewController *TopMostViewController() {
 - (NSString *)getDeviceUniqueUUID;
 @end
 
-@implementation VoneVerifyManager
-{
+@implementation VoneVerifyManager {
     NSURLSessionDataTask *_verifyTask;
     BOOL _isShowingAlert;
 }
@@ -77,7 +75,7 @@ UIViewController *TopMostViewController() {
 
 - (void)startGlobalAppVerify {
     if (_isShowingAlert) return;
-
+    
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSString *localSavedCode = [defaults stringForKey:PREFS_KEY];
     
@@ -88,21 +86,18 @@ UIViewController *TopMostViewController() {
     
     [self sendFullVerifyRequestWithCode:localSavedCode completion:^(NSInteger retCode) {
         if (retCode == 1) {
-            // 验证成功，正常进APP
             [self showWelcomeToast];
         } else if (retCode == 2) {
-            // 设备不匹配，清空本地并弹出输入框
             [self clearLocalActivateData];
             [self showTipAlertWithTitle:@"提示" message:@"该激活码已使用，请重新输入" complete:^{
                 [self showInputCodeAlert];
             }];
         } else if (retCode == -99) {
-            // 网络异常，点确定直接弹出输入框，不让进APP
-            [self showTipAlertWithTitle:@"验证失败" message:@"网络错误，请检查网络后重试" complete:^{
+            // 网络异常，弹窗后让用户有机会重试
+            [self showTipAlertWithTitle:@"网络异常" message:@"网络错误，请检查网络后重试" complete:^{
                 [self showInputCodeAlert];
             }];
         } else {
-            // 卡密停用/失效，清空本地并弹出输入框
             [self clearLocalActivateData];
             [self showTipAlertWithTitle:@"验证失败" message:@"激活码已停用，请重新输入" complete:^{
                 [self showInputCodeAlert];
@@ -122,10 +117,9 @@ UIViewController *TopMostViewController() {
     
     NSString *urlString = [NSString stringWithFormat:@"%@?code=%@&device_id=%@", VERIFY_API_URL, encodedCode, encodedDeviceId];
     NSURL *url = [NSURL URLWithString:urlString];
+    
     if (!url) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            completion(-99);
-        });
+        dispatch_async(dispatch_get_main_queue(), ^{ completion(-99); });
         return;
     }
     
@@ -162,9 +156,8 @@ UIViewController *TopMostViewController() {
 
 - (void)showWelcomeToast {
     UIViewController *topVC = TopMostViewController();
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"验证成功" 
-                                                                   message:@"欢 迎 使 用" 
-                                                            preferredStyle:UIAlertControllerStyleAlert];
+    if (!topVC) return;
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"验证成功" message:@"欢 迎 使 用" preferredStyle:UIAlertControllerStyleAlert];
     [topVC presentViewController:alert animated:YES completion:nil];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         [alert dismissViewControllerAnimated:YES completion:nil];
@@ -173,6 +166,7 @@ UIViewController *TopMostViewController() {
 
 - (void)showTipAlertWithTitle:(NSString *)title message:(NSString *)msg complete:(void(^)(void))complete {
     UIViewController *topVC = TopMostViewController();
+    if (!topVC) return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title message:msg preferredStyle:UIAlertControllerStyleAlert];
     UIAlertAction *okAction = [UIAlertAction actionWithTitle:@"确定" style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
         if (complete) complete();
@@ -187,14 +181,16 @@ UIViewController *TopMostViewController() {
     
     [self dismissVerificationWindow];
     UIViewController *vc = TopMostViewController();
+    
+    // === 增加防御性编程，防止vc为空导致崩溃 ===
     if (!vc || !vc.view.window) {
-        _isShowingAlert = NO; 
+        _isShowingAlert = NO;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             [self showInputCodeAlert];
         });
         return;
     }
-
+    
     UIView *overlay = [[UIView alloc] initWithFrame:vc.view.bounds];
     overlay.backgroundColor = [UIColor colorWithWhite:0 alpha:0.5];
     overlay.tag = ALERT_TAG;
@@ -240,6 +236,7 @@ UIViewController *TopMostViewController() {
 
 - (void)dismissVerificationWindow {
     UIViewController *topVC = TopMostViewController();
+    if (!topVC) return;
     UIView *overlay = [topVC.view viewWithTag:ALERT_TAG];
     if (overlay) {
         [overlay removeFromSuperview];
@@ -270,18 +267,16 @@ UIViewController *TopMostViewController() {
             [defaults setObject:code forKey:PREFS_KEY];
             [defaults setBool:YES forKey:PREFS_STATUS];
             [defaults synchronize];
-            
             [weakSelf dismissVerificationWindow];
             [weakSelf showWelcomeToast];
         } else if (retCode == 2) {
-            [weakSelf showTipAlertWithTitle:@"验证失败" message:@"该激活码已使用，请重新输入" complete:^{
-            }];
+            [weakSelf showTipAlertWithTitle:@"验证失败" message:@"该激活码已使用，请重新输入" complete:^{ }];
             [sender setTitle:@"验证" forState:UIControlStateNormal];
             inputField.text = @"";
             [inputField becomeFirstResponder];
         } else if (retCode == -99) {
-            // 手动输入激活码时网络异常，弹窗后留在输入界面，不关闭授权框
-            [weakSelf showTipAlertWithTitle:@"验证失败" message:@"网络错误，请检查网络后重试" complete:nil];
+            // 手动输入时网络异常，弹窗后留在输入界面
+            [weakSelf showTipAlertWithTitle:@"网络异常" message:@"网络错误，请检查网络后重试" complete:nil];
             [sender setTitle:@"验证" forState:UIControlStateNormal];
             inputField.text = @"";
             [inputField becomeFirstResponder];
