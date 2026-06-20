@@ -77,29 +77,39 @@ UIViewController *TopMostViewController() {
 
 - (void)startGlobalAppVerify {
     if (_isShowingAlert) return;
-
+    
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSString *localSavedCode = [defaults stringForKey:PREFS_KEY];
     
+    // 如果本地没有卡密，直接弹窗
     if (!localSavedCode || localSavedCode.length == 0) {
         [self showInputCodeAlert];
         return;
     }
     
+    // 本地有卡密，后台静默验证
     [self sendFullVerifyRequestWithCode:localSavedCode completion:^(NSInteger retCode) {
         if (retCode == 1) {
-            [self showWelcomeToast];
+            // 验证成功
+            // [self showWelcomeToast]; 
         } else if (retCode == 2) {
+            // 卡密被占用/失效
             [self clearLocalActivateData];
-            [self showTipAlertWithTitle:@"提示" message:@"该激活码已使用，请重新输入" complete:^{
+            [self showTipAlertWithTitle:@"提示" message:@"该激活码在其他设备登录，请重新输入" complete:^{
                 [self showInputCodeAlert];
             }];
         } else if (retCode == -99) {
-            // 网络异常专属弹窗
-            [self showTipAlertWithTitle:@"网络异常" message:@"网络错误，请检查网络后重试" complete:nil];
+            // === 严格模式修改点 ===
+            // 1. 清除本地数据（防止断网时利用本地缓存进入）
+            [self clearLocalActivateData]; 
+            // 2. 弹窗提示，并在用户点击确定后，强制再次调用验证（形成死循环）
+            [self showTipAlertWithTitle:@"网络异常" message:@"必须连接网络才能验证，请检查网络设置" complete:^{
+                [self startGlobalAppVerify]; // 递归调用，强制再次检查
+            }];
         } else {
+            // 其他错误（卡密停用等）
             [self clearLocalActivateData];
-            [self showTipAlertWithTitle:@"验证失败" message:@"激活码已停用，请重新输入" complete:^{
+            [self showTipAlertWithTitle:@"验证失败" message:@"激活码已失效，请重新输入" complete:^{
                 [self showInputCodeAlert];
             }];
         }
