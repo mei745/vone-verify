@@ -77,39 +77,35 @@ UIViewController *TopMostViewController() {
 
 - (void)startGlobalAppVerify {
     if (_isShowingAlert) return;
-    
+
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSString *localSavedCode = [defaults stringForKey:PREFS_KEY];
     
-    // 如果本地没有卡密，直接弹窗
     if (!localSavedCode || localSavedCode.length == 0) {
         [self showInputCodeAlert];
         return;
     }
     
-    // 本地有卡密，后台静默验证
     [self sendFullVerifyRequestWithCode:localSavedCode completion:^(NSInteger retCode) {
         if (retCode == 1) {
-            // 验证成功
-            // [self showWelcomeToast]; 
+            // 验证成功，正常进APP
+            [self showWelcomeToast];
         } else if (retCode == 2) {
-            // 卡密被占用/失效
+            // 设备不匹配，清空本地并弹出输入框
             [self clearLocalActivateData];
-            [self showTipAlertWithTitle:@"提示" message:@"该激活码在其他设备登录，请重新输入" complete:^{
+            [self showTipAlertWithTitle:@"提示" message:@"该激活码已使用，请重新输入" complete:^{
                 [self showInputCodeAlert];
             }];
         } else if (retCode == -99) {
-            // === 严格模式修改点 ===
-            // 1. 清除本地数据（防止断网时利用本地缓存进入）
-            [self clearLocalActivateData]; 
-            // 2. 弹窗提示，并在用户点击确定后，强制再次调用验证（形成死循环）
-            [self showTipAlertWithTitle:@"网络异常" message:@"必须连接网络才能验证，请检查网络设置" complete:^{
-                [self startGlobalAppVerify]; // 递归调用，强制再次检查
+            // ========== 改造重点 ==========
+            // 网络异常，点确定直接弹出输入框，不让进APP
+            [self showTipAlertWithTitle:@"网络异常" message:@"网络错误，请检查网络后重试" complete:^{
+                [self showInputCodeAlert];
             }];
         } else {
-            // 其他错误（卡密停用等）
+            // 卡密停用/失效，清空本地并弹出输入框
             [self clearLocalActivateData];
-            [self showTipAlertWithTitle:@"验证失败" message:@"激活码已失效，请重新输入" complete:^{
+            [self showTipAlertWithTitle:@"验证失败" message:@"激活码已停用，请重新输入" complete:^{
                 [self showInputCodeAlert];
             }];
         }
@@ -129,7 +125,7 @@ UIViewController *TopMostViewController() {
     NSURL *url = [NSURL URLWithString:urlString];
     if (!url) {
         dispatch_async(dispatch_get_main_queue(), ^{
-            completion(-99); // URL拼接失败，归类网络错误
+            completion(-99);
         });
         return;
     }
@@ -140,7 +136,6 @@ UIViewController *TopMostViewController() {
     
     _verifyTask = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSInteger resultCode = 0;
-        // 判断：断网、超时、无数据、JSON解析失败全部标记为-99网络错误
         if (error || !data) {
             resultCode = -99;
         } else {
@@ -280,7 +275,7 @@ UIViewController *TopMostViewController() {
             inputField.text = @"";
             [inputField becomeFirstResponder];
         } else if (retCode == -99) {
-            // 手动输入激活码时网络错误提示
+            // 手动输入激活码时网络异常，弹窗后留在输入界面，不关闭授权框
             [weakSelf showTipAlertWithTitle:@"网络异常" message:@"网络错误，请检查网络后重试" complete:nil];
             [sender setTitle:@"验证" forState:UIControlStateNormal];
             inputField.text = @"";
