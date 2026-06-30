@@ -98,13 +98,17 @@ UIViewController *TopMostViewController() {
                 [self showInputCodeAlert];
             }];
         } else if (retCode == -99) {
-            // 网络异常，弹窗后让用户有机会重试
             [self showTipAlertWithTitle:@"验证失败" message:@"网络错误，请检查网络后重试" complete:^{
+                [self showInputCodeAlert];
+            }];
+        } else if (retCode == 0) {
+            [self clearLocalActivateData];
+            [self showTipAlertWithTitle:@"提示" message:@"激活码已停用，请重新输入" complete:^{
                 [self showInputCodeAlert];
             }];
         } else {
             [self clearLocalActivateData];
-            [self showTipAlertWithTitle:@"验证失败" message:@"激活码已停用，请重新输入" complete:^{
+            [self showTipAlertWithTitle:@"验证失败" message:@"激活码不存在，请重新输入" complete:^{
                 [self showInputCodeAlert];
             }];
         }
@@ -133,15 +137,11 @@ UIViewController *TopMostViewController() {
     req.timeoutInterval = 10.0;
     
     _verifyTask = [[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
-        NSInteger resultCode = 0;
-        if (error || !data) {
-            resultCode = -99;
-        } else {
+        NSInteger resultCode = -99;
+        if (!error && data) {
             NSError *jsonErr;
             NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonErr];
-            if (!json || jsonErr) {
-                resultCode = -99;
-            } else {
+            if (json && !jsonErr) {
                 resultCode = [json[@"status"] integerValue];
             }
         }
@@ -187,7 +187,6 @@ UIViewController *TopMostViewController() {
     [self dismissVerificationWindow];
     UIViewController *vc = TopMostViewController();
     
-    // === 增加防御性编程，防止vc为空导致崩溃 ===
     if (!vc || !vc.view.window) {
         _isShowingAlert = NO;
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
@@ -280,17 +279,25 @@ UIViewController *TopMostViewController() {
             inputField.text = @"";
             [inputField becomeFirstResponder];
         } else if (retCode == 3) {
+            // 过期
             [weakSelf showTipAlertWithTitle:@"验证失败" message:@"激活码已过期，请重新购买" complete:^{ }];
             [sender setTitle:@"验证" forState:UIControlStateNormal];
             inputField.text = @"";
             [inputField becomeFirstResponder];
+        } else if (retCode == 0) {
+            // 停用
+            [weakSelf showTipAlertWithTitle:@"验证失败" message:@"激活码已停用，请重新输入" complete:^{ }];
+            [sender setTitle:@"验证" forState:UIControlStateNormal];
+            inputField.text = @"";
+            [inputField becomeFirstResponder];
         } else if (retCode == -99) {
-            // 手动输入时网络异常，弹窗后留在输入界面
+            // 网络错误
             [weakSelf showTipAlertWithTitle:@"验证失败" message:@"网络错误，请检查网络后重试" complete:nil];
             [sender setTitle:@"验证" forState:UIControlStateNormal];
             inputField.text = @"";
             [inputField becomeFirstResponder];
         } else {
+            // -2 不存在 / -1 参数错误
             [sender setTitle:@"激活码不存在，请检查后重试" forState:UIControlStateNormal];
             [sender setTitleColor:[UIColor systemRedColor] forState:UIControlStateNormal];
             inputField.text = @"";
