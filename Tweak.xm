@@ -92,6 +92,11 @@ UIViewController *TopMostViewController() {
             [self showTipAlertWithTitle:@"提示" message:@"该激活码已使用，请重新输入" complete:^{
                 [self showInputCodeAlert];
             }];
+        } else if (retCode == 3) {
+            [self clearLocalActivateData];
+            [self showTipAlertWithTitle:@"提示" message:@"激活码已过期，请重新购买" complete:^{
+                [self showInputCodeAlert];
+            }];
         } else if (retCode == -99) {
             // 网络异常，弹窗后让用户有机会重试
             [self showTipAlertWithTitle:@"验证失败" message:@"网络错误，请检查网络后重试" complete:^{
@@ -271,6 +276,11 @@ UIViewController *TopMostViewController() {
             [weakSelf showWelcomeToast];
         } else if (retCode == 2) {
             [weakSelf showTipAlertWithTitle:@"验证失败" message:@"该激活码已使用，请重新输入" complete:^{ }];
+            [sender setTitle:@"验证" forState:UIControlStateNormal];
+            inputField.text = @"";
+            [inputField becomeFirstResponder];
+        } else if (retCode == 3) {
+            [weakSelf showTipAlertWithTitle:@"验证失败" message:@"激活码已过期，请重新购买" complete:^{ }];
             [sender setTitle:@"验证" forState:UIControlStateNormal];
             inputField.text = @"";
             [inputField becomeFirstResponder];
